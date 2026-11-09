@@ -114,6 +114,29 @@ t('ganti password → token lama tidak berlaku', () => {
   assert.strictEqual(g.post({ action: 'me', token: tok }).code, 'forbidden'); assert.ok(g.post({ action: 'me', token: r.data.token }).ok);
 });
 t('LOG mencatat aksi admin', () => { const ss = env.SpreadsheetApp.openById(env.__props.DB_ID); assert.ok(ss.getSheetByName('LOG').getLastRow() > 10); });
+t('Mode script di Master: cukup link PR → PR disalin ke tab PR_DATA di Master', () => {
+  const MID = 'MASTERGSHEET000000000000000000000000000001';
+  const h = createEnv({ boundId: MID }), e3 = h.__env;
+  e3.__addSheetFile(MID, 'Master Stok', 'MASTER', MASTER.slice(1));
+  e3.__addSheetFile('PRSHEETID00000000000000000000000000000000002', 'TRACKING PR SAFRAN', 'Tracking PR', prRows);
+  h.setup();
+  const ms = e3.SpreadsheetApp.openById(MID);
+  assert.ok(['TX', 'ITEMS', 'LOG'].every(n => ms.getSheetByName(n)), 'tab TX/ITEMS/LOG dibuat di Master');
+  const a = h.post({ action: 'setupAdmin', setupKey: e3.__props.SETUP_KEY, email: 'a@x.co', password: 'rahasia123' }).data.token;
+  assert.strictEqual(h.get({ action: 'status' }).data.bound, true);
+  const r = h.post({ action: 'setSources', token: a, prUrl: 'https://docs.google.com/spreadsheets/d/PRSHEETID00000000000000000000000000000000002/edit?usp=sharing' });
+  assert.ok(r.ok, r.message); assert.ok(!r.data.dbCreated, 'tidak boleh membuat Data Sheet baru'); assert.ok(!e3.__props.DB_ID && !e3.__props.MASTER_ID);
+  const copy = ms.getSheetByName('PR_DATA'); assert.ok(copy && copy.getLastRow() >= 4, 'PR_DATA terisi');
+  const st = h.get({ action: 'stock' }); assert.ok(st.ok, st.message);
+  assert.strictEqual(st.data.items.find(i => i.name === 'Mesin Bor').awal, 3, 'master dibaca dari tab MASTER file ini');
+  const helm = st.data.items.find(i => /^Helm Orange/.test(i.name)); assert.strictEqual(helm.inQty, 12, 'barang masuk dari PR');
+  // sumber PR berubah → muat ulang (fresh) menyalin ulang
+  const src = e3.__files.PRSHEETID00000000000000000000000000000000002; src.ss.sheets[0].data[2][14] = 20; src.updated = Date.now() + 1000;
+  const st2 = h.get({ action: 'stock', fresh: '1' }).data; assert.strictEqual(st2.items.find(i => /^Helm Orange/.test(i.name)).inQty, 20);
+  assert.strictEqual(String(copy.data[3][14]), '20', 'PR_DATA ikut diperbarui');
+  const s2 = h.post({ action: 'setAutoSync', token: a, on: true }); assert.ok(s2.data.autoSync);
+  h.syncPR(); // tidak error saat tidak ada perubahan
+});
 if (prFile) t('Smoke data nyata: Tracking PR SAFRAN lewat setSources + GET pr/stock', () => {
   const h = createEnv(), e2 = h.__env; h.setup();
   e2.__addSheetFile('REALPRSHEET000000000000000000000000000000001', 'TRACKING PR SAFRAN', 'TRACKING PR', prRowsFromXlsx(prFile));

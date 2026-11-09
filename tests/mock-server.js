@@ -4,14 +4,15 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { createEnv, prRowsFromXlsx } = require('./gas-emulator');
 const ROOT = path.join(__dirname, '..'), PORT = +process.argv[3] || 8787;
-const g = createEnv(), env = g.__env;
+const MID = 'DEMOMASTERGSHEET0000000000000000000000001';
+const g = createEnv({ boundId: MID }), env = g.__env;
 const prRows = process.argv[2] ? prRowsFromXlsx(process.argv[2]) : [['No.', 'Deskripsi', 'Qty', 'Sat', 'Tanggal', 'PR'], [1, 'Helm Orange', 20, 'pcs', '2026-11-01', 'PR-001', '', '', '', '', '', '', '', '', 12, 'pcs', '2026-11-05', 'SJ1', 'Toko A', 'Close', '']];
 env.__addSheetFile('DEMOPRSHEET00000000000000000000000000000001', 'TRACKING PR (demo)', 'TRACKING PR', prRows);
-env.__addXlsxFile('DEMOMASTER0000000000000000001', 'Master Stok (demo).xlsx', [['Nama Barang', 'Satuan', 'Kategori', 'Stok Awal', 'Lokasi Rak', 'Stok Minimum', 'Catatan'],
+env.__addSheetFile(MID, 'Master Stok (demo)', 'MASTER', [['Nama Barang', 'Satuan', 'Kategori', 'Stok Awal', 'Lokasi Rak', 'Stok Minimum', 'Catatan'],
   ['Sepatu Safety Boot Kuning uk. 41', 'Pasang', 'Material', 6, 'A1', 2, ''], ['Helm Orange + Tali Dagu NSA', 'Pcs', 'Material', 10, 'A2', 3, ''], ['Mesin Bor', 'Unit', 'Alat', 3, 'B1', 1, '']]);
 g.setup();
 const a = g.post({ action: 'setupAdmin', setupKey: env.__props.SETUP_KEY, name: 'Admin Demo', email: 'admin@demo.id', password: 'demo12345' });
-g.post({ action: 'setSources', token: a.data.token, prUrl: 'DEMOPRSHEET00000000000000000000000000000001', masterUrl: 'DEMOMASTER0000000000000000001' });
+g.post({ action: 'setSources', token: a.data.token, prUrl: 'DEMOPRSHEET00000000000000000000000000000001' });
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 http.createServer((req, res) => {

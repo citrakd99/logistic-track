@@ -10,6 +10,9 @@ class Sheet {
   getName() { return this.name; }
   getLastRow() { for (let i = this.data.length - 1; i >= 0; i--) if ((this.data[i] || []).some(v => v !== '' && v != null)) return i + 1; return 0; }
   getMaxRows() { return this.maxRows; }
+  getMaxColumns() { return 26; }
+  insertColumnsAfter() { }
+  clearContents() { this.data = []; }
   insertRowsAfter(_, n) { this.maxRows += n; }
   setFrozenRows() { }
   getDataRange() { const lr = this.getLastRow(), lc = Math.max(1, ...this.data.map(r => r.length)); return this.getRange(1, 1, Math.max(1, lr), lc); }
@@ -71,7 +74,14 @@ function createEnv(opts = {}) {
       create: (res, blob) => { const id = 'tmp' + crypto.randomUUID().replace(/-/g, ''); files[id] = { name: res.name, mime: res.mimeType, updated: Date.now(), ss: new Spreadsheet(id, res.name, [new Sheet('MASTER', blob.rows)]) }; return { id }; },
       remove: id => { delete files[id]; }
     } },
+    ScriptApp: (() => { const tr = []; return {
+      getProjectTriggers: () => tr.slice(),
+      deleteTrigger: t => { const i = tr.indexOf(t); if (i >= 0) tr.splice(i, 1); },
+      newTrigger: fn => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => { const t = { getHandlerFunction: () => fn }; tr.push(t); return t; } }) }) })
+    }; })(),
     SpreadsheetApp: {
+      getActiveSpreadsheet: () => (opts.boundId && files[opts.boundId] ? files[opts.boundId].ss : null),
+      getUi: () => { throw new Error('no ui'); },
       openById: id => { const f = files[id]; if (!f || !f.ss) throw new Error('Spreadsheet tidak bisa dibuka: ' + id); return f.ss; },
       create: name => { const id = 'db' + crypto.randomUUID().replace(/-/g, '').slice(0, 30); const ss = new Spreadsheet(id, name); files[id] = { name, mime: env.MimeType.GOOGLE_SHEETS, updated: Date.now(), ss }; return ss; }
     }

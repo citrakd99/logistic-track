@@ -682,11 +682,15 @@
     const srcCard = (label, s) => s ? `<div class="src"><b>${esc(label)}: ${esc(s.name || s.id)}</b>${s.error ? `<span class="late">${esc(s.error)}</span>` : `<span class="dim">${esc(s.type)} · diubah ${esc(fmtDT(s.updated))}</span><a href="${esc(s.url)}" target="_blank" rel="noopener">Buka file ↗</a>`}</div>` : `<div class="src"><b>${esc(label)}</b><span class="dim">Belum diatur</span></div>`;
     v.innerHTML = `<div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
       <section class="card"><h2>Sumber data</h2>
-        <p class="hint">Tempel link Google Sheet. Tracking PR & Master Stok hanya dibaca. Transaksi stok ditulis ke <b>Data Sheet</b> milik aplikasi (dibuat otomatis bila dikosongkan). File .xlsx di Drive juga bisa dipakai untuk Tracking PR & Master.</p>
-        ${srcCard('Tracking PR', st.pr)}${srcCard('Master Stok', st.master)}${srcCard('Data Sheet aplikasi', st.db)}
+        ${st.bound
+          ? `<p class="hint">Script terpasang di <b>${esc(st.master ? st.master.name : 'Master')}</b>. Master Stok dan transaksi (tab TX, ITEMS, LOG) ada di file itu. Tracking PR hanya <b>dibaca</b> dari link di bawah, lalu disalin ke tab <b>PR_DATA</b> di Master setiap kali berubah.</p>`
+          : '<p class="hint">Tempel link Google Sheet. Tracking PR & Master Stok hanya dibaca. Transaksi stok ditulis ke <b>Data Sheet</b> (dibuat otomatis bila dikosongkan).</p>'}
+        ${srcCard('Tracking PR (lihat saja)', st.pr)}${srcCard(st.bound ? 'Master (file script ini)' : 'Master Stok', st.master)}${st.bound ? '' : srcCard('Data Sheet aplikasi', st.db)}
+        ${st.pr ? `<div class="src"><b>Salinan PR di Master (tab PR_DATA)</b><span class="dim">${st.prCopiedAt ? 'Terakhir disalin ' + esc(fmtDT(st.prCopiedAt)) : 'Belum pernah disalin'} · sinkron otomatis ${st.autoSync ? '<b>aktif (10 menit)</b>' : 'mati'}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" id="cSync">Sinkron sekarang</button><button class="btn sm" id="cAuto">${st.autoSync ? 'Matikan' : 'Nyalakan'} sinkron otomatis</button></div></div>` : ''}
         <div class="f"><label for="cPr">Link Tracking PR</label><input class="inp" id="cPr" placeholder="https://docs.google.com/spreadsheets/d/…" value="${st.pr ? esc(st.pr.url || '') : ''}"></div>
-        <div class="f"><label for="cMs">Link Master Stok <span class="dim">(opsional)</span></label><input class="inp" id="cMs" value="${st.master ? esc(st.master.url || '') : ''}"></div>
-        <div class="f"><label for="cDb">Link Data Sheet <span class="dim">(kosongkan untuk dibuat otomatis)</span></label><input class="inp" id="cDb" value="${st.db ? esc(st.db.url || '') : ''}"></div>
+        ${st.bound ? '' : `<div class="f"><label for="cMs">Link Master Stok <span class="dim">(opsional)</span></label><input class="inp" id="cMs" value="${st.master ? esc(st.master.url || '') : ''}"></div>
+        <div class="f"><label for="cDb">Link Data Sheet <span class="dim">(kosongkan untuk dibuat otomatis)</span></label><input class="inp" id="cDb" value="${st.db ? esc(st.db.url || '') : ''}"></div>`}
         <div id="cErr"></div><div><button class="btn primary" id="cSave">Uji & simpan</button></div></section>
       <section class="card"><h2>Admin</h2>
         ${admins.map(a => `<div class="adm"><div><b>${esc(a.name)}</b>${a.me ? ' <span class="dim">(Anda)</span>' : ''}<div class="hint">${esc(a.email)}</div></div>${a.me ? '' : `<button class="btn sm danger" data-rmadm="${esc(a.email)}">Hapus</button>`}</div>`).join('')}
@@ -697,11 +701,13 @@
     $('#cSave').onclick = async () => {
       const b = $('#cSave'); b.disabled = true; b.textContent = 'Menguji file…'; $('#cErr').innerHTML = '';
       try {
-        const r = await apiPost('setSources', { prUrl: val('cPr'), masterUrl: val('cMs'), dbUrl: val('cDb') });
+        const r = await apiPost('setSources', st.bound ? { prUrl: val('cPr') } : { prUrl: val('cPr'), masterUrl: val('cMs'), dbUrl: val('cDb') });
         $('#cErr').innerHTML = `<div class="ok-box">Tersimpan. Tracking PR: ${r.pr.items} item${r.master ? ` · Master: ${r.master.items} barang` : ''}${r.dbCreated ? ' · Data Sheet baru dibuat' : ''}.</div>`;
         state.pr = null; state.stock = null; setTimeout(() => render(), 1500);
       } catch (e) { showErr('cErr', e.message); b.disabled = false; b.textContent = 'Uji & simpan'; }
     };
+    const cs = $('#cSync'); if (cs) cs.onclick = async () => { cs.disabled = true; cs.textContent = 'Menyalin…'; try { await apiPost('syncPR'); state.pr = null; state.stock = null; toast('Tracking PR disalin ke Master'); render(); } catch (e) { showErr('cErr', e.message); cs.disabled = false; cs.textContent = 'Sinkron sekarang'; } };
+    const ca = $('#cAuto'); if (ca) ca.onclick = async () => { ca.disabled = true; try { await apiPost('setAutoSync', { on: !st.autoSync }); toast(st.autoSync ? 'Sinkron otomatis dimatikan' : 'Sinkron otomatis aktif tiap 10 menit'); render(); } catch (e) { showErr('cErr', e.message); ca.disabled = false; } };
     $('#nAdd').onclick = async () => { try { await apiPost('addAdmin', { name: val('nName'), email: val('nEmail'), password: $('#nPw').value }); toast('Admin ditambahkan'); render(); } catch (e) { showErr('nErr', e.message); } };
     $$('[data-rmadm]').forEach(b => b.onclick = async () => { if (!confirm('Hapus admin ' + b.dataset.rmadm + '?')) return; try { await apiPost('removeAdmin', { email: b.dataset.rmadm }); toast('Admin dihapus'); render(); } catch (e) { toast(e.message, true); } });
     $('#pSave').onclick = async () => { try { setAuth(await apiPost('changePassword', { oldPassword: $('#pOld').value, newPassword: $('#pNew').value })); toast('Password diganti'); render(); } catch (e) { showErr('pErr', e.message); } };
