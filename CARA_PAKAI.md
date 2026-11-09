@@ -50,6 +50,9 @@ Klik **Login admin** di kanan atas.
 | Ganti link Google Sheet | **Pengaturan → Sumber data** → tempel link → **Uji & simpan**. Aplikasi menguji file dulu sebelum menyimpan. |
 | Tambah/hapus admin, ganti password | **Pengaturan → Admin**. |
 
+### Konfirmasi sebelum menyimpan
+Setiap aksi yang mengubah data (catat keluar / pinjam / serah APD, kembali, koreksi stok, edit & batalkan catatan, edit / tambah / sembunyikan barang, ubah kategori massal, PIN, hapus admin) menampilkan **ringkasan untuk dicek** dulu. Data baru tersimpan setelah **Ya, simpan** ditekan. **Batal** atau tombol Esc kembali ke form tanpa menyimpan. Koreksi kategori per baris (satu ketukan) tetap langsung tersimpan agar cepat.
+
 ### Aturan yang dijaga server
 - Barang keluar atau dipinjam **tidak boleh melebihi stok tersedia**. Pesan error menyebut sisa stoknya.
 - Pengembalian tidak boleh melebihi jumlah yang dipinjam.

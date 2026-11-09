@@ -444,7 +444,7 @@
     const sn = $('#sNewItem'); if (sn) sn.onclick = () => openItemForm(null);
     const km = $('#sKatMode'); if (km) km.onclick = () => { f.katMode = !f.katMode; render(); };
     $$('[data-setkat]', el).forEach(b => b.onclick = e => { e.stopPropagation(); setKat([b.dataset.k], b.dataset.setkat); });
-    $$('[data-bulkkat]', el).forEach(b => b.onclick = () => { const keys = rows.slice(0, LIM).map(i => i.key); if (confirm(`Ubah kategori ${keys.length} barang yang tampil menjadi ${b.dataset.bulkkat}?`)) setKat(keys, b.dataset.bulkkat); });
+    $$('[data-bulkkat]', el).forEach(b => b.onclick = () => { const keys = rows.slice(0, LIM).map(i => i.key); confirmBox({ title: `Ubah kategori ${keys.length} barang?`, rows: [['Kategori baru', `<b>${esc(b.dataset.bulkkat)}</b>`], ['Barang', rows.slice(0, 8).map(i => esc(i.name)).join('<br>') + (keys.length > 8 ? `<br><span class="dim">…dan ${keys.length - 8} lainnya</span>` : '')]], note: 'Kategori ditulis ke tab MASTER.', ok: 'Ya, ubah' }).then(ok => { if (ok) setKat(keys, b.dataset.bulkkat); }); });
     $$('.sr[data-key]', el).forEach(r => { r.onclick = () => { if (!f.katMode) openStockItem(r.dataset.key); }; r.onkeydown = e => { if (e.key === 'Enter') openStockItem(r.dataset.key); }; });
   }
 
@@ -575,7 +575,10 @@
         if (!lines[i]) { showErr('oErr', `Baris ${i + 1}: pilih barang dari daftar.`); return; }
         payload.push(Object.assign({ key: lines[i], qty: qtys[i] }, common));
       }
-      await submit('oSave', 'oErr', () => apiPost('saveTx', { lines: payload }), `${payload.length} catatan ${OUT_MODE[mode].ok} tersimpan`);
+      const itemsTxt = payload.map(p => { const it = state.stock.map.get(p.key); return `<b>${esc(p.qty || '?')} ${esc(it ? it.unit : '')}</b> ${esc(it ? it.name : p.key)}${it ? ` <span class="dim">(stok ${esc(fmtN(it.stok))})</span>` : ''}${it && Number(String(p.qty).replace(',', '.')) > it.stok ? ' <span class="late">melebihi stok!</span>' : ''}`; }).join('<br>');
+      await submit('oSave', 'oErr', () => apiPost('saveTx', { lines: payload }), `${payload.length} catatan ${OUT_MODE[mode].ok} tersimpan`,
+        { title: `Konfirmasi ${OUT_MODE[mode].t.toLowerCase()}`, rows: [['Barang', itemsTxt], [OUT_MODE[mode].p, esc(common.person)], [OUT_MODE[mode].u, esc(common.purpose)], ['Tanggal', esc(fmtD(common.date, true))], ['Catatan', esc(common.note)]],
+          note: mode === 'pinjam' ? 'Stok berkurang sampai alat dikembalikan.' : 'Stok berkurang permanen.', ok: 'Ya, simpan' });
     }
     draw();
   }
@@ -592,7 +595,8 @@
           <div class="f wide"><label for="rNote">Catatan</label><input class="inp" id="rNote"></div></div><div id="rErr"></div>`,
       foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="rSave">Simpan</button>'
     });
-    $('#rSave').onclick = () => submit('rSave', 'rErr', () => apiPost('saveTx', { lines: [{ type: 'kembali', loanId: l.id, key: l.key, qty: val('rQty'), date: val('rDate'), person: val('rBy'), cond: val('rCond'), note: val('rNote') }] }), 'Pengembalian tercatat');
+    $('#rSave').onclick = () => submit('rSave', 'rErr', () => apiPost('saveTx', { lines: [{ type: 'kembali', loanId: l.id, key: l.key, qty: val('rQty'), date: val('rDate'), person: val('rBy'), cond: val('rCond'), note: val('rNote') }] }), 'Pengembalian tercatat',
+      () => ({ title: 'Konfirmasi pengembalian', rows: [['Barang', esc(l.name)], ['Jumlah kembali', `<b>${esc(val('rQty'))} ${esc(l.unit)}</b> dari sisa ${esc(fmtN(l.sisa))}`], ['Dikembalikan oleh', esc(val('rBy'))], ['Kondisi', esc(val('rCond'))], ['Tanggal', esc(fmtD(val('rDate'), true))]] }));
   }
 
   function openAdjust(key) {
@@ -609,7 +613,8 @@
     const delta = () => { const p = Number(val('aPhys').replace(',', '.')); return val('aPhys') === '' || isNaN(p) ? null : +(p - it.stok).toFixed(3); };
     $('#aPhys').oninput = () => { const d = delta(); $('#aDelta').textContent = d === null ? '–' : (d > 0 ? '+' : '') + fmtN(d) + ' ' + it.unit; };
     $('#aSave').onclick = () => { const d = delta(); if (d === null) { showErr('aErr', 'Isi stok fisik.'); return; } if (d === 0) { showErr('aErr', 'Stok fisik sama dengan stok aplikasi, tidak ada yang perlu dikoreksi.'); return; }
-      submit('aSave', 'aErr', () => apiPost('saveTx', { lines: [{ type: 'koreksi', key, qty: d, date: val('aDate'), reason: val('aReason') }] }), 'Koreksi tersimpan'); };
+      submit('aSave', 'aErr', () => apiPost('saveTx', { lines: [{ type: 'koreksi', key, qty: d, date: val('aDate'), reason: val('aReason') }] }), 'Koreksi tersimpan',
+        { title: 'Konfirmasi koreksi stok', rows: [['Barang', esc(it.name)], ['Stok aplikasi', `${esc(fmtN(it.stok))} ${esc(it.unit)}`], ['Stok fisik', `<b>${esc(val('aPhys'))} ${esc(it.unit)}</b>`], ['Selisih dicatat', `<b>${d > 0 ? '+' : ''}${esc(fmtN(d))} ${esc(it.unit)}</b>`], ['Alasan', esc(val('aReason'))]] }); };
   }
 
   function openTx(id) {
@@ -631,7 +636,8 @@
         <div class="f"><label for="vReason">Alasan pembatalan</label><input class="inp" id="vReason"></div><div id="vErr"></div>`,
       foot: '<button class="btn" data-close="1">Kembali</button><button class="btn danger" id="vSave">Batalkan catatan</button>'
     });
-    $('#vSave').onclick = () => submit('vSave', 'vErr', () => apiPost('voidTx', { id: t.id, reason: val('vReason') }), 'Catatan dibatalkan');
+    $('#vSave').onclick = () => submit('vSave', 'vErr', () => apiPost('voidTx', { id: t.id, reason: val('vReason') }), 'Catatan dibatalkan',
+      () => ({ title: 'Batalkan catatan ini?', rows: [['Catatan', `${esc(TYPES[t.type][0])} ${esc(fmtN(+t.qty))} ${esc(t.unit)} · ${esc(t.name)}`], ['Tanggal', esc(fmtD(t.date, true))], ['Alasan', esc(val('vReason'))]], note: 'Catatan tidak dihapus, hanya ditandai batal. Stok dihitung ulang.', ok: 'Ya, batalkan', danger: true }));
   }
   function openEditTx(t) {
     const it = state.stock.map.get(t.key);
@@ -654,7 +660,10 @@
       const key = $('#eItem') ? keyFromLabel(val('eItem')) : t.key;
       if (!key) { showErr('eErr', 'Pilih barang dari daftar.'); return; }
       const tx = { key, qty: val('eQty'), date: val('eDate'), person: $('#ePerson') ? val('ePerson') : t.person, purpose: $('#ePurpose') ? val('ePurpose') : t.purpose, cond: $('#eCond') ? val('eCond') : t.cond, reason: $('#eReason') ? val('eReason') : t.reason, note: val('eNote') };
-      submit('eSave', 'eErr', () => apiPost('editTx', { id: t.id, tx, reason: val('eWhy') }), 'Perubahan tersimpan');
+      const it2 = state.stock.map.get(key), chg = (l, a, b) => String(a ?? '') !== String(b ?? '') ? [l, `<span class="dim"><s>${esc(a)}</s></span> → <b>${esc(b)}</b>`] : null;
+      const rows = [['Catatan', `${esc(TYPES[t.type][0])} · ${esc(t.name)}`], chg('Barang', t.name, it2 ? it2.name : ''), chg('Jumlah', t.qty, tx.qty), chg('Tanggal', t.date, tx.date), chg('Orang', t.person, tx.person), chg('Keperluan', t.purpose, tx.purpose), chg('Kondisi', t.cond, tx.cond), chg('Alasan koreksi', t.reason, tx.reason), chg('Catatan', t.note, tx.note), ['Alasan edit', esc(val('eWhy'))]].filter(Boolean);
+      submit('eSave', 'eErr', () => apiPost('editTx', { id: t.id, tx, reason: val('eWhy') }), 'Perubahan tersimpan',
+        { title: rows.length > 2 ? 'Simpan perubahan catatan?' : 'Tidak ada perubahan — tetap simpan?', rows, note: 'Catatan lama ditandai batal dan diganti catatan baru.' });
     };
   }
 
@@ -675,7 +684,8 @@
     });
     let kat = it ? it.kat : 'Material';
     $$('#iKat button').forEach(b => b.onclick = () => { kat = b.dataset.k; $$('#iKat button').forEach(x => x.classList.toggle('on', x === b)); });
-    $('#iSave').onclick = () => submit('iSave', 'iErr', () => apiPost('saveItem', { key: key || '', name: val('iName'), unit: val('iUnit'), kat, awal: val('iAwal'), min: val('iMin'), rak: val('iRak'), note: val('iNote') }), it ? 'Data barang tersimpan' : 'Barang ditambahkan');
+    $('#iSave').onclick = () => submit('iSave', 'iErr', () => apiPost('saveItem', { key: key || '', name: val('iName'), unit: val('iUnit'), kat, awal: val('iAwal'), min: val('iMin'), rak: val('iRak'), note: val('iNote') }), it ? 'Data barang tersimpan' : 'Barang ditambahkan',
+      () => ({ title: it ? 'Simpan perubahan data barang?' : 'Tambah barang baru?', rows: [['Barang', esc(it ? it.name + ' · ' + it.unit : val('iName') + ' · ' + val('iUnit'))], ['Kategori', it && it.kat !== kat ? `<s class="dim">${esc(it.kat)}</s> → <b>${esc(kat)}</b>` : esc(kat)], ['Stok awal', esc(val('iAwal'))], ['Stok minimum', esc(val('iMin') || '–')], ['Lokasi rak', esc(val('iRak'))], ['Catatan', esc(val('iNote'))]], note: 'Data disimpan ke tab MASTER.' }));
   }
   async function setKat(keys, kat) {
     const prev = keys.map(k => { const it = state.stock.map.get(k); return it && [it, it.kat, it.katSrc]; }).filter(Boolean);
@@ -684,12 +694,35 @@
     catch (e) { prev.forEach(([it, k, src]) => { it.kat = k; it.katSrc = src; }); render(); toast(e.message || 'Gagal menyimpan kategori', true); }
   }
   async function hideItem(it) {
+    const ok = await confirmBox(it.hidden
+      ? { title: 'Tampilkan lagi barang ini?', rows: [['Barang', esc(it.name + ' · ' + it.unit)]], ok: 'Ya, tampilkan' }
+      : { title: 'Sembunyikan barang ini?', rows: [['Barang', esc(it.name + ' · ' + it.unit)], ['Stok', `${esc(fmtN(it.stok))} ${esc(it.unit)}`]], note: 'Barang tidak muncul di daftar stok, tapi riwayatnya tetap ada. Bisa ditampilkan lagi lewat "Tampilkan tersembunyi".', ok: 'Ya, sembunyikan', danger: true });
+    if (!ok) return;
     try { await apiPost('hideItem', { key: it.key, hidden: !it.hidden }); afterWrite(it.hidden ? 'Barang ditampilkan lagi' : 'Barang disembunyikan'); }
     catch (e) { toast(e.message || 'Gagal', true); }
   }
 
   function showErr(id, msg) { const el = document.getElementById(id); if (el) { el.innerHTML = `<div class="err-box">${esc(msg)}</div>`; el.scrollIntoView({ block: 'nearest' }); } }
-  async function submit(btnId, errId, fn, okMsg) {
+  /** Kotak konfirmasi di atas drawer. rows: [[label, nilai], ...]. Mengembalikan Promise<boolean>. */
+  function confirmBox({ title, rows = [], note = '', ok = 'Ya, simpan', danger = false }) {
+    return new Promise(res => {
+      const root = document.createElement('div'); root.className = 'cfm-root';
+      root.innerHTML = `<div class="scrim cfm-scrim"></div><div class="cfm" role="alertdialog" aria-modal="true" aria-labelledby="cfmT">
+        <h3 id="cfmT">${esc(title)}</h3>
+        ${rows.length ? `<dl class="kv cfm-kv">${rows.filter(r => r && r[1] !== '' && r[1] != null).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>` : ''}
+        ${note ? `<p class="hint">${note}</p>` : ''}
+        <div class="cfm-act"><button class="btn" data-c="0">Batal</button><button class="btn ${danger ? 'danger' : 'primary'}" data-c="1">${esc(ok)}</button></div></div>`;
+      document.body.appendChild(root);
+      const done = v => { root.remove(); document.removeEventListener('keydown', key, true); res(v); };
+      const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+      document.addEventListener('keydown', key, true);
+      root.querySelector('.cfm-scrim').onclick = () => done(false);
+      root.querySelectorAll('[data-c]').forEach(b => b.onclick = () => done(b.dataset.c === '1'));
+      root.querySelector('[data-c="1"]').focus();
+    });
+  }
+  async function submit(btnId, errId, fn, okMsg, conf) {
+    if (conf && !(await confirmBox(typeof conf === 'function' ? conf() : conf))) return;
     const b = document.getElementById(btnId); if (b) { b.disabled = true; b.dataset.l = b.textContent; b.textContent = 'Menyimpan…'; }
     try { await fn(); await afterWrite(okMsg); }
     catch (e) { showErr(errId, e.message || 'Gagal menyimpan'); if (b) { b.disabled = false; b.textContent = b.dataset.l; } }
@@ -787,10 +820,10 @@
     };
     const cs = $('#cSync'); if (cs) cs.onclick = async () => { cs.disabled = true; cs.textContent = 'Menyalin…'; try { await apiPost('syncPR'); state.pr = null; state.stock = null; toast('Tracking PR disalin ke Master'); render(); } catch (e) { showErr('cErr', e.message); cs.disabled = false; cs.textContent = 'Sinkron sekarang'; } };
     const ca = $('#cAuto'); if (ca) ca.onclick = async () => { ca.disabled = true; try { await apiPost('setAutoSync', { on: !st.autoSync }); toast(st.autoSync ? 'Sinkron otomatis dimatikan' : 'Sinkron otomatis aktif tiap 10 menit'); render(); } catch (e) { showErr('cErr', e.message); ca.disabled = false; } };
-    $('#vSet').onclick = async () => { try { await apiPost('setViewerPin', { pin: val('vPin') }); toast(st.pin ? 'PIN diganti' : 'PIN viewer aktif'); render(); } catch (e) { showErr('vErr', e.message); } };
-    const vo = $('#vOff'); if (vo) vo.onclick = async () => { if (!confirm('Matikan PIN? Data akan bisa dilihat siapa pun yang punya link.')) return; try { await apiPost('setViewerPin', { off: true }); toast('PIN dimatikan'); render(); } catch (e) { showErr('vErr', e.message); } };
+    $('#vSet').onclick = async () => { if (!(await confirmBox({ title: st.pin ? 'Ganti PIN viewer?' : 'Aktifkan PIN viewer?', note: st.pin ? 'Semua perangkat viewer harus memasukkan PIN baru.' : 'Viewer harus memasukkan PIN untuk melihat data.', ok: st.pin ? 'Ya, ganti' : 'Ya, aktifkan' }))) return; try { await apiPost('setViewerPin', { pin: val('vPin') }); toast(st.pin ? 'PIN diganti' : 'PIN viewer aktif'); render(); } catch (e) { showErr('vErr', e.message); } };
+    const vo = $('#vOff'); if (vo) vo.onclick = async () => { if (!(await confirmBox({ title: 'Matikan PIN viewer?', note: 'Data PR & stok akan bisa dilihat siapa pun yang punya link.', ok: 'Ya, matikan', danger: true }))) return; try { await apiPost('setViewerPin', { off: true }); toast('PIN dimatikan'); render(); } catch (e) { showErr('vErr', e.message); } };
     $('#nAdd').onclick = async () => { try { await apiPost('addAdmin', { name: val('nName'), email: val('nEmail'), password: $('#nPw').value }); toast('Admin ditambahkan'); render(); } catch (e) { showErr('nErr', e.message); } };
-    $$('[data-rmadm]').forEach(b => b.onclick = async () => { if (!confirm('Hapus admin ' + b.dataset.rmadm + '?')) return; try { await apiPost('removeAdmin', { email: b.dataset.rmadm }); toast('Admin dihapus'); render(); } catch (e) { toast(e.message, true); } });
+    $$('[data-rmadm]').forEach(b => b.onclick = async () => { if (!(await confirmBox({ title: 'Hapus admin?', rows: [['Email', esc(b.dataset.rmadm)]], ok: 'Ya, hapus', danger: true }))) return; try { await apiPost('removeAdmin', { email: b.dataset.rmadm }); toast('Admin dihapus'); render(); } catch (e) { toast(e.message, true); } });
     $('#pSave').onclick = async () => { try { setAuth(await apiPost('changePassword', { oldPassword: $('#pOld').value, newPassword: $('#pNew').value })); toast('Password diganti'); render(); } catch (e) { showErr('pErr', e.message); } };
   }
 
