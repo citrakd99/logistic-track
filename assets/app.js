@@ -728,7 +728,8 @@
     catch (e) { v.innerHTML = errView(e, 'retrySet'); const r = $('#retrySet'); if (r) r.onclick = () => render(); return; }
     if (state.route !== 'pengaturan') return;
     const srcCard = (label, s) => s ? `<div class="src"><b>${esc(label)}: ${esc(s.name || s.id)}</b>${s.error ? `<span class="late">${esc(s.error)}</span>` : `<span class="dim">${esc(s.type)} · diubah ${esc(fmtDT(s.updated))}</span><a href="${esc(s.url)}" target="_blank" rel="noopener">Buka file ↗</a>`}</div>` : `<div class="src"><b>${esc(label)}</b><span class="dim">Belum diatur</span></div>`;
-    v.innerHTML = `<div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    v.innerHTML = `${st.staleFiles && st.staleFiles.length ? `<div class="err-box"><b>Ada file script lama di proyek Apps Script.</b> Fungsi lama menimpa kode baru. Di editor Apps Script, hapus semua file selain <span class="mono">Code.gs</span> dan <span class="mono">appsscript.json</span>, lalu Terapkan → Kelola deployment → Versi baru.</div>` : ''}
+      <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
       <section class="card"><h2>Sumber data</h2>
         ${st.bound
           ? `<p class="hint">Script terpasang di <b>${esc(st.master ? st.master.name : 'Master')}</b>. Master Stok dan transaksi (tab TX, ITEMS, LOG) ada di file itu. Tracking PR hanya <b>dibaca</b> dari link di bawah, lalu disalin ke tab <b>PR_DATA</b> di Master setiap kali berubah.</p>`
