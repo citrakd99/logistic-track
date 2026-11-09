@@ -365,7 +365,7 @@ function cacheGet_(key) {
   try { return JSON.parse(parts.join('')); } catch (e) { return null; }
 }
 function dataVersion_() { return props_().getProperty('DATA_VER') || '0'; }
-function bumpDataVersion_() { props_().setProperty('DATA_VER', String(Date.now())); }
+function bumpDataVersion_() { props_().setProperty('DATA_VER', Date.now().toString(36) + Utilities.getUuid().slice(0, 6)); }
 
 // ---------- sumber (PR & Master) ----------
 function fileInfo_(id, fresh) {
