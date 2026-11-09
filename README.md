@@ -39,6 +39,7 @@ gas/                       Backend Apps Script — salin semua file ini ke proye
   Data.gs                  Baca Sheet/xlsx, cache, Data Sheet (TX/ITEMS/LOG)
   Stock.gs                 Data PR & stok, CRUD transaksi & barang
   Logic.gs                 Parser log book, hitung stok, validasi (fungsi murni)
+  Master.gs                Tulis perubahan barang ke tab MASTER + dropdown kategori
   Seed.gs                  Migrasi 27 penanda kategori "Alat" dari aplikasi lama
 dist/LoGistic.gs           Gabungan semua file gas/ (satu file untuk ditempel ke Apps Script)
   appsscript.json          Manifest (zona waktu, Drive API v3, akses web app)

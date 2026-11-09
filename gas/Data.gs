@@ -140,7 +140,7 @@ function readPRCopy_() {
 function loadMaster_(fresh) {
   var id = cfg_().masterId;
   if (!id) return { rows: [], source: null };
-  var info = fileInfo_(id, fresh), ck = 'ms:' + id + ':' + info.updated;
+  var info = fileInfo_(id, fresh), ck = 'ms:' + id + ':' + info.updated + ':' + (props_().getProperty('MASTER_REV') || '');
   var hit = cacheGet_(ck);
   if (hit) return hit;
   var rows = parseMaster_(readValues_(info, 'MASTER'));

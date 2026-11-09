@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.4.0';
+var APP_VERSION = '1.5.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -81,6 +81,7 @@ function staleFiles_() {
   var stale = [];
   if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
   if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
+  if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
   return stale;
 }
 function actStatus_() {
@@ -140,6 +141,7 @@ function actSetSources_(me, b) {
   p.deleteProperty('PR_SYNCED');
   res.pr.copied = !!loadPR_(true);
   bumpDataVersion_();
+  res.katDropdown = ensureKatValidation_();
   log_(me.email, 'setSources', 'PR=' + prId + ' MASTER=' + (masterId || '-') + ' DB=' + dbId);
   res.settings = actGetSettings_();
   return res;
@@ -156,6 +158,7 @@ function setup() {
   var b = boundSs_();
   if (b) {
     Object.keys(TABS).forEach(function (t) { ensureTab_(b, t, TABS[t]); });
+    console.log(ensureKatValidation_() ? 'Dropdown kategori MASTER: Material, Alat, APD.' : 'Dropdown kategori tidak dipasang (header "Nama Barang" tidak ditemukan).');
     console.log('Script terpasang di "' + b.getName() + '": Master & Data Sheet = file ini (tab MASTER, TX, ITEMS, LOG, PR_DATA).');
   }
   if (needsSetup_()) {
@@ -195,6 +198,10 @@ function onOpen() {
     SpreadsheetApp.getUi().createMenu('LoGistic')
       .addItem('Sinkron Tracking PR sekarang', 'syncPR')
       .addItem('Nyalakan sinkron otomatis (10 menit)', 'pasangSinkronOtomatis')
+      .addItem('Pasang dropdown kategori (Material/Alat/APD)', 'pasangDropdownKategori')
       .addToUi();
   } catch (e) { /* bukan konteks Sheet */ }
 }
+
+/** Menu/editor: pasang dropdown kategori Material/Alat/APD di kolom C tab MASTER. */
+function pasangDropdownKategori() { console.log(ensureKatValidation_() ? 'Dropdown kategori terpasang.' : 'Tab MASTER / header "Nama Barang" tidak ditemukan.'); }

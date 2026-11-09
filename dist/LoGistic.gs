@@ -10,7 +10,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.4.0';
+var APP_VERSION = '1.5.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -85,6 +85,7 @@ function staleFiles_() {
   var stale = [];
   if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
   if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
+  if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
   return stale;
 }
 function actStatus_() {
@@ -144,6 +145,7 @@ function actSetSources_(me, b) {
   p.deleteProperty('PR_SYNCED');
   res.pr.copied = !!loadPR_(true);
   bumpDataVersion_();
+  res.katDropdown = ensureKatValidation_();
   log_(me.email, 'setSources', 'PR=' + prId + ' MASTER=' + (masterId || '-') + ' DB=' + dbId);
   res.settings = actGetSettings_();
   return res;
@@ -160,6 +162,7 @@ function setup() {
   var b = boundSs_();
   if (b) {
     Object.keys(TABS).forEach(function (t) { ensureTab_(b, t, TABS[t]); });
+    console.log(ensureKatValidation_() ? 'Dropdown kategori MASTER: Material, Alat, APD.' : 'Dropdown kategori tidak dipasang (header "Nama Barang" tidak ditemukan).');
     console.log('Script terpasang di "' + b.getName() + '": Master & Data Sheet = file ini (tab MASTER, TX, ITEMS, LOG, PR_DATA).');
   }
   if (needsSetup_()) {
@@ -199,9 +202,13 @@ function onOpen() {
     SpreadsheetApp.getUi().createMenu('LoGistic')
       .addItem('Sinkron Tracking PR sekarang', 'syncPR')
       .addItem('Nyalakan sinkron otomatis (10 menit)', 'pasangSinkronOtomatis')
+      .addItem('Pasang dropdown kategori (Material/Alat/APD)', 'pasangDropdownKategori')
       .addToUi();
   } catch (e) { /* bukan konteks Sheet */ }
 }
+
+/** Menu/editor: pasang dropdown kategori Material/Alat/APD di kolom C tab MASTER. */
+function pasangDropdownKategori() { console.log(ensureKatValidation_() ? 'Dropdown kategori terpasang.' : 'Tab MASTER / header "Nama Barang" tidak ditemukan.'); }
 
 // ===== Auth.gs =====
 /**
@@ -527,7 +534,7 @@ function readPRCopy_() {
 function loadMaster_(fresh) {
   var id = cfg_().masterId;
   if (!id) return { rows: [], source: null };
-  var info = fileInfo_(id, fresh), ck = 'ms:' + id + ':' + info.updated;
+  var info = fileInfo_(id, fresh), ck = 'ms:' + id + ':' + info.updated + ':' + (props_().getProperty('MASTER_REV') || '');
   var hit = cacheGet_(ck);
   if (hit) return hit;
   var rows = parseMaster_(readValues_(info, 'MASTER'));
@@ -594,6 +601,83 @@ function log_(email, action, detail, result) {
   } catch (e) { /* log gagal tidak boleh menggagalkan aksi */ }
 }
 function stripRow_(o) { var c = {}; for (var k in o) if (k !== '_row') c[k] = o[k]; return c; }
+
+// ===== Master.gs =====
+/**
+ * Master.gs — menulis perubahan data barang langsung ke tab MASTER (jika Master berupa Google Sheet
+ * yang bisa diedit, mis. script terpasang di Master). Master menjadi sumber kebenaran: kategori,
+ * stok awal, rak, minimum, catatan. Jika Master tidak bisa ditulis (.xlsx / hanya lihat), aplikasi
+ * memakai tab ITEMS sebagai penimpa seperti sebelumnya.
+ */
+var MASTER_COLS = ['Nama Barang', 'Satuan', 'Kategori', 'Stok Awal', 'Lokasi Rak', 'Stok Minimum', 'Catatan'];
+
+function masterSheet_() {
+  var c = cfg_(); if (!c.masterId) return null;
+  try {
+    var info = fileInfo_(c.masterId, true);
+    if (info.mime !== MimeType.GOOGLE_SHEETS) return null;
+    var ss = SpreadsheetApp.openById(c.masterId), sheets = ss.getSheets();
+    return sheets.filter(function (s) { return s.getName().trim().toUpperCase() === 'MASTER'; })[0] || sheets[0];
+  } catch (e) { return null; }
+}
+function masterHeaderRow_(vals) {
+  for (var i = 0; i < vals.length; i++) if (/^nama barang$/i.test(String(vals[i][0] == null ? '' : vals[i][0]).trim())) return i;
+  return -1;
+}
+/** Dropdown kategori (Material/Alat/APD) di kolom C tab MASTER. */
+function ensureKatValidation_(sh) {
+  try {
+    sh = sh || masterSheet_(); if (!sh) return false;
+    var hi = masterHeaderRow_(sh.getDataRange().getValues()); if (hi < 0) return false;
+    var start = hi + 2, n = Math.max(1, sh.getMaxRows() - start + 1);
+    var rule = SpreadsheetApp.newDataValidation().requireValueInList(KATS, true).setAllowInvalid(false)
+      .setHelpText('Material = dipakai habis · Alat = dipinjam & dikembalikan · APD = diserahkan ke pekerja').build();
+    sh.getRange(start, 3, n, 1).setDataValidation(rule);
+    return true;
+  } catch (e) { return false; }
+}
+function bumpMasterRev_() { props_().setProperty('MASTER_REV', Date.now().toString(36)); }
+
+/**
+ * Upsert baris barang ke tab MASTER. rows: [{key,name,unit,kat?,awal?,rak?,min?,note?}]; hanya field
+ * yang ada (!== undefined) yang ditulis. Mengembalikan true jika berhasil ditulis ke Master.
+ */
+function upsertMaster_(rows) {
+  var sh = masterSheet_(); if (!sh || !rows.length) return false;
+  var vals = sh.getDataRange().getValues(), hi = masterHeaderRow_(vals);
+  if (hi < 0) return false;
+  var idx = {};
+  for (var i = hi + 1; i < vals.length; i++) { var nm = pStr_(vals[i][0]); if (nm) idx[stockKey_(nm, pStr_(vals[i][1]))] = i + 1; }
+  var FIELDS = [['kat', 3], ['awal', 4], ['rak', 5], ['min', 6], ['note', 7]], add = [];
+  rows.forEach(function (r) {
+    var rn = idx[r.key];
+    if (rn) {
+      FIELDS.forEach(function (f) { if (r[f[0]] !== undefined) sh.getRange(rn, f[1]).setValue(r[f[0]] === null ? '' : r[f[0]]); });
+    } else {
+      add.push([r.name, r.unit, r.kat || '', r.awal == null ? '' : r.awal, r.rak || '', r.min == null ? '' : r.min, r.note || '']);
+      idx[r.key] = -1;
+    }
+  });
+  if (add.length) {
+    var last = Math.max(sh.getLastRow(), hi + 1), need = last + add.length - sh.getMaxRows();
+    if (need > 0) sh.insertRowsAfter(sh.getMaxRows(), need + 50);
+    sh.getRange(last + 1, 1, add.length, 7).setValues(add);
+  }
+  ensureKatValidation_(sh);
+  bumpMasterRev_();
+  return true;
+}
+
+/** Setelah ditulis ke Master, kosongkan penimpa di ITEMS agar Master yang berlaku (status sembunyi tetap). */
+function clearOverrides_(ss, items, keys) {
+  var set = {}; keys.forEach(function (k) { set[k] = 1; });
+  items.forEach(function (o) {
+    if (!set[o.key]) return;
+    var r = stripRow_(o); r.kat = ''; r.awal = ''; r.rak = ''; r.min = ''; r.note = ''; r.full = false;
+    if (r.source === 'app') r.source = 'master';
+    updateRow_(ss, 'ITEMS', o._row, r);
+  });
+}
 
 // ===== Stock.gs =====
 /**
@@ -728,6 +812,13 @@ function actSaveItem_(me, b) {
     var awal = pNum_(b.awal), min = pNum_(b.min);
     if (awal !== null && awal < 0) fail_('invalid', 'Stok awal tidak boleh minus.');
     if (min !== null && min < 0) fail_('invalid', 'Stok minimum tidak boleh minus.');
+    var rak = String(b.rak || '').trim().slice(0, 60), note = String(b.note || '').trim().slice(0, 300);
+    // utamakan tulis ke tab MASTER (sumber kebenaran); jika tidak bisa, simpan sebagai penimpa di ITEMS
+    if (upsertMaster_([{ key: key, name: name, unit: unit, kat: kat, awal: awal === null ? 0 : awal, rak: rak, min: min, note: note }])) {
+      clearOverrides_(ss, ctx.items, [key]);
+      log_(me.email, isNew ? 'addItem' : 'editItem', name + ' [' + unit + '] → MASTER');
+      return { key: key, master: true };
+    }
     var exist = ctx.items.filter(function (o) { return o.key === key; })[0];
     var row = {
       key: key, name: name, unit: unit, kat: kat, awal: awal === null ? 0 : awal, rak: String(b.rak || '').trim().slice(0, 60),
@@ -766,6 +857,14 @@ function actSetKat_(me, b) {
   return withLock_(function () {
     var ss = db_(), ctx = stockContext_(ss, false);
     var M = buildStock_(ctx.master.rows, ctx.items, ctx.feed, ctx.tx), byKey = {}, add = [], n = 0;
+    var valid = keys.filter(function (k) { return M[k]; });
+    if (upsertMaster_(valid.map(function (k) { return { key: k, name: M[k].name, unit: M[k].unit, kat: b.kat }; }))) {
+      // hapus kategori penimpa di ITEMS agar nilai di Master yang berlaku
+      var set = {}; valid.forEach(function (k) { set[k] = 1; });
+      ctx.items.forEach(function (o) { if (set[o.key] && o.kat) { var r = stripRow_(o); r.kat = ''; updateRow_(ss, 'ITEMS', o._row, r); } });
+      log_(me.email, 'setKat', b.kat + ' × ' + valid.length + ' → MASTER');
+      return { updated: valid.length, master: true };
+    }
     ctx.items.forEach(function (o) { byKey[o.key] = o; });
     keys.forEach(function (k) {
       var it = M[k]; if (!it) return;

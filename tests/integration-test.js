@@ -147,6 +147,23 @@ t('Mode script di Master: cukup link PR → PR disalin ke tab PR_DATA di Master'
   const st2 = h.get({ action: 'stock', fresh: '1' }).data; assert.strictEqual(st2.items.find(i => /^Helm Orange/.test(i.name)).inQty, 20);
   assert.strictEqual(String(copy.data[3][14]), '20', 'PR_DATA ikut diperbarui');
   const s2 = h.post({ action: 'setAutoSync', token: a, on: true }); assert.ok(s2.data.autoSync);
+  // kategori & data barang dari aplikasi ditulis langsung ke tab MASTER
+  const msh = ms.getSheetByName('MASTER');
+  assert.strictEqual(JSON.stringify(msh.validation && msh.validation.rule.list), '["Material","Alat","APD"]', 'dropdown kategori MASTER berisi APD');
+  const sep = st2.items.find(i => i.name.startsWith('Sepatu')), helmIt = st2.items.find(i => /^Helm Orange/.test(i.name));
+  const k1 = h.post({ action: 'setKat', token: a, keys: [sep.key, helmIt.key], kat: 'APD' }); assert.ok(k1.ok && k1.data.master, k1.message);
+  const rowOf = n => msh.data.find(r => r[0] === n);
+  assert.strictEqual(rowOf('Sepatu Safety Boot Kuning uk. 41')[2], 'APD', 'baris Master diperbarui');
+  assert.ok(rowOf('Helm Orange + Tali Dagu NSA'), 'barang dari PR ditambahkan ke Master'); assert.strictEqual(rowOf('Helm Orange + Tali Dagu NSA')[2], 'APD');
+  const st3 = h.get({ action: 'stock' }).data; const sep3 = st3.items.find(i => i.key === sep.key);
+  assert.strictEqual(sep3.kat, 'APD'); assert.strictEqual(sep3.katSrc, 'master', 'kategori kini dari Master');
+  assert.ok(h.post({ action: 'saveItem', token: a, key: sep.key, kat: 'APD', awal: 7, min: 2, rak: 'R9', note: 'uk 41' }).data.master);
+  assert.strictEqual(JSON.stringify(rowOf('Sepatu Safety Boot Kuning uk. 41').slice(2, 7)), '["APD",7,"R9",2,"uk 41"]');
+  assert.ok(h.post({ action: 'saveItem', token: a, name: 'Wearpack Biru', unit: 'pcs', kat: 'APD', awal: 10 }).data.master);
+  assert.ok(rowOf('Wearpack Biru'), 'barang baru masuk Master');
+  // admin mengubah Master langsung (dropdown) → aplikasi mengikuti
+  rowOf('Sepatu Safety Boot Kuning uk. 41')[2] = 'Material'; e3.__files[MID].updated = Date.now() + 5000;
+  const st4 = h.get({ action: 'stock', fresh: '1' }).data; assert.strictEqual(st4.items.find(i => i.key === sep.key).kat, 'Material', 'edit langsung di Master berlaku');
   h.syncPR(); // tidak error saat tidak ada perubahan
 });
 t('PIN viewer: data terkunci tanpa PIN, terbuka dengan PIN/admin, ganti PIN membatalkan token lama', () => {
