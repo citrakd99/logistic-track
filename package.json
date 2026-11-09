@@ -1,0 +1,13 @@
+{
+  "name": "logistic-tracking",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LoGistic Tracking — Tracking PR & Stok Gudang (GitHub Pages + Google Apps Script)",
+  "scripts": {
+    "test": "node tests/run-tests.js && node tests/integration-test.js",
+    "dev": "node tests/mock-server.js"
+  },
+  "devDependencies": {
+    "xlsx": "0.18.5"
+  }
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#C2560F">
+<meta name="description" content="LoGistic Tracking — pemantauan PR material dan stok gudang site">
+<title>LoGistic Tracking</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23C2560F'/%3E%3Cpath d='M8 10h16v4H8zM8 16h10v4H8zM8 22h13v2H8z' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">Logistik site</span>
+      <h1>LoGistic Tracking</h1>
+    </div>
+    <nav class="nav" id="nav" aria-label="Menu utama">
+      <a href="#pr" data-nav="pr">Tracking PR</a>
+      <a href="#stok" data-nav="stok">Stok Gudang</a>
+      <a href="#pengaturan" data-nav="pengaturan" id="navSet" hidden>Pengaturan</a>
+    </nav>
+    <div class="who" id="who"></div>
+  </header>
+  <div class="srcbar" id="srcbar" role="status" aria-live="polite"></div>
+  <main id="view" tabindex="-1"></main>
+  <footer class="foot">LoGistic Tracking · data dibaca dari Google Sheet · <span id="ver"></span></footer>
+</div>
+<div id="drawerRoot"></div>
+<div id="toastRoot" aria-live="polite"></div>
+<script src="assets/config.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
