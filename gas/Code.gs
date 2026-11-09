@@ -75,9 +75,16 @@ function doPost(e) {
   });
 }
 
+/** Deteksi file .gs lama yang tertinggal di proyek Apps Script (fungsi lama menimpa fungsi baru). */
+function staleFiles_() {
+  var stale = [];
+  if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
+  if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
+  return stale;
+}
 function actStatus_() {
   var c = cfg_();
-  return { app: 'LoGistic Tracking', version: APP_VERSION, bound: c.bound, pin: pinOn_(), needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
+  return { app: 'LoGistic Tracking', version: APP_VERSION, staleFiles: staleFiles_(), bound: c.bound, pin: pinOn_(), needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
 }
 
 function srcView_(id) {
@@ -88,7 +95,7 @@ function srcView_(id) {
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
   var pc = pinCfg_();
-  return { pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  return { staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**
