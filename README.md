@@ -10,10 +10,10 @@ LoGistic Tracking adalah satu web app untuk memantau **Tracking PR** (permintaan
 ## Arsitektur
 
 ```
-GitHub Pages (index.html + assets/)  ──fetch──►  Google Apps Script Web App (gas/)
-                                                    │ baca  : Tracking PR (Google Sheet / .xlsx)
-                                                    │ baca  : Master Stok (Google Sheet / .xlsx)
-                                                    └ tulis : Data Sheet aplikasi (tab TX, ITEMS, LOG)
+GitHub Pages (index.html + assets/)  ──fetch──►  Apps Script (terpasang di Google Sheet Master)
+                                                    │ baca  : Tracking PR (akses Pelihat) ──salin──► tab PR_DATA
+                                                    │ baca  : tab MASTER
+                                                    └ tulis : tab TX, ITEMS, LOG (di Master)
 ```
 
 - **Link Google Sheet tidak ditulis di kode.** Admin mengisinya di menu **Pengaturan**, lalu server menyimpannya di Script Properties.
@@ -33,6 +33,7 @@ gas/                       Backend Apps Script — salin semua file ini ke proye
   Stock.gs                 Data PR & stok, CRUD transaksi & barang
   Logic.gs                 Parser log book, hitung stok, validasi (fungsi murni)
   Seed.gs                  Migrasi 27 penanda kategori "Alat" dari aplikasi lama
+dist/LoGistic.gs           Gabungan semua file gas/ (satu file untuk ditempel ke Apps Script)
   appsscript.json          Manifest (zona waktu, Drive API v3, akses web app)
 tests/                     Unit test, test integrasi (emulator Apps Script), server lokal
 .github/workflows/         CI: jalankan test → deploy ke GitHub Pages
@@ -41,20 +42,20 @@ tests/                     Unit test, test integrasi (emulator Apps Script), ser
 ## Mode sementara
 Selama `API_URL` di `assets/config.js` masih kosong, menu **Tracking PR** dan **Stok Gudang** menampilkan tombol untuk membuka aplikasi versi sebelumnya di claude.ai (link ada di `LT_CONFIG.LEGACY`). Aplikasi versi sebelumnya membaca Google Sheet yang sama. Begitu `API_URL` diisi, aplikasi otomatis beralih ke mode penuh.
 
-## Pemasangan (sekali saja, ±15 menit)
+## Pemasangan (sekali saja, ±15 menit, lewat laptop/PC)
 
-### 1. Backend: Google Apps Script
-1. Buka <https://script.google.com>, lalu klik **Proyek baru**. Beri nama `LoGistic Tracking API`.
-2. Di **Setelan proyek** (ikon roda gigi), centang **Tampilkan file manifes "appsscript.json"**.
-3. Salin isi setiap file di folder `gas/` ke file dengan nama yang sama di editor, termasuk `appsscript.json`. Gunakan tombol **+** untuk menambah file skrip.
-4. Di menu **Layanan (+)**, tambahkan **Drive API** versi **v3** (identifier `Drive`). Langkah ini dibutuhkan untuk membaca file .xlsx.
-5. Pilih fungsi **`setup`**, lalu klik **Jalankan** dan setujui izin akses. Di **Log eksekusi** akan muncul `KODE SETUP ADMIN PERTAMA: XXXXXXXX`. Catat kode ini.
-6. Klik **Terapkan → Deployment baru → Aplikasi web**, dengan pengaturan:
-   - Jalankan sebagai: **Saya**
-   - Yang memiliki akses: **Siapa saja**
-7. Salin **URL aplikasi web** yang berakhiran `/exec`.
+### 1. Backend: Apps Script dipasang di Google Sheet **Master**
+Tracking PR milik pihak lain dan Anda hanya **Pelihat**, jadi script dipasang di **Master** (milik Anda). Script membaca Tracking PR lewat link, menyalin isinya ke tab `PR_DATA` di Master, lalu menulis transaksi stok ke tab `TX`, `ITEMS`, dan `LOG` di file Master yang sama.
 
-> Akun yang men-deploy Apps Script harus punya akses **lihat** ke Tracking PR dan Master Stok. Viewer tidak perlu akses ke Sheet.
+1. Buka Google Sheet **Master**. Tab barangnya harus bernama `MASTER`, dengan kolom `Nama Barang · Satuan · Kategori · Stok Awal · Lokasi Rak · Stok Minimum · Catatan`.
+2. Pilih menu **Ekstensi → Apps Script**.
+3. Hapus isi `Code.gs`, lalu tempel **seluruh isi `dist/LoGistic.gs`**. Ini satu file gabungan dari folder `gas/`.
+4. Buka **Setelan proyek** (ikon roda gigi) dan centang **Tampilkan file manifes "appsscript.json"**. Lalu buka `appsscript.json` dan ganti isinya dengan `dist/appsscript.json`.
+5. Pilih fungsi **`setup`**, lalu klik **Jalankan** dan setujui izin akses. Log akan menampilkan `KODE SETUP ADMIN PERTAMA: XXXXXXXX`. Catat kode ini. Tab `TX`, `ITEMS`, dan `LOG` otomatis dibuat di Master.
+6. Pilih **Terapkan → Deployment baru → jenis: Aplikasi web**, dengan pengaturan **Jalankan sebagai: Saya** dan **Akses: Siapa saja**. Salin URL yang berakhiran `/exec`.
+
+> Akun pemilik script harus punya akses **Pelihat** ke Tracking PR. Viewer aplikasi tidak perlu akses ke Sheet mana pun.
+> Script juga bisa dipasang sebagai proyek terpisah di script.google.com. Dalam mode itu, link Master dan Data Sheet diisi lewat Pengaturan.
 
 ### 2. Frontend: GitHub Pages
 1. Isi `assets/config.js` → `API_URL: 'https://script.google.com/macros/s/…/exec'`, lalu commit.
@@ -63,11 +64,12 @@ Selama `API_URL` di `assets/config.js` masih kosong, menu **Tracking PR** dan **
 
 ### 3. Konfigurasi awal di aplikasi
 1. Buka situs, lalu klik **Login admin**. Karena belum ada admin, aplikasi menampilkan form **Buat admin pertama**. Masukkan kode setup dari langkah 1.5.
-2. Buka **Pengaturan → Sumber data**, lalu tempel link Tracking PR dan Master Stok. Kosongkan Data Sheet supaya dibuat otomatis. Klik **Uji & simpan**.
-3. (Sekali saja) Di editor Apps Script, jalankan fungsi `seedKategoriAlatDariAppLama` untuk membawa 27 penanda kategori "Alat" dari aplikasi lama.
+2. Buka **Pengaturan → Sumber data**, tempel **link Tracking PR** saja, lalu klik **Uji & simpan**. Isinya langsung disalin ke tab `PR_DATA` di Master.
+3. Klik **Nyalakan sinkron otomatis** supaya salinan PR diperbarui tiap 10 menit. Tombol **↻ Muat ulang** di aplikasi juga menyalin ulang jika PR berubah. Di Sheet Master juga muncul menu **LoGistic → Sinkron Tracking PR sekarang**.
+4. (Sekali saja) Di editor Apps Script, jalankan fungsi `seedKategoriAlatDariAppLama` untuk membawa 27 penanda kategori "Alat" dari aplikasi lama.
 
 ## Update kode backend
-Setelah mengubah file di `gas/`, salin perubahannya ke editor Apps Script. Lalu buka **Terapkan → Kelola deployment → Edit (pensil) → Versi: Versi baru → Terapkan**. URL tetap sama.
+Setelah mengubah file di `gas/`, jalankan `npm run bundle`, lalu tempel ulang `dist/LoGistic.gs` ke editor Apps Script. Lalu buka **Terapkan → Kelola deployment → Edit (pensil) → Versi: Versi baru → Terapkan**. URL tetap sama.
 Rollback: pada menu yang sama, pilih versi sebelumnya.
 
 ## Pengembangan lokal

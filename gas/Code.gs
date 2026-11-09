@@ -57,6 +57,8 @@ function doPost(e) {
       case 'removeAdmin': return actRemoveAdmin_(me, b);
       case 'changePassword': return actChangePassword_(me, b);
       case 'refresh': bumpDataVersion_(); return { ok: true };
+      case 'syncPR': props_().deleteProperty('PR_SYNCED'); loadPR_(true); bumpDataVersion_(); log_(me.email, 'syncPR', ''); return actGetSettings_();
+      case 'setAutoSync': setAutoSync_(b.on !== false); log_(me.email, 'setAutoSync', String(b.on !== false)); return actGetSettings_();
     }
     fail_('invalid', 'Aksi tidak dikenal.');
   });
@@ -64,7 +66,7 @@ function doPost(e) {
 
 function actStatus_() {
   var c = cfg_();
-  return { app: 'LoGistic Tracking', version: APP_VERSION, needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
+  return { app: 'LoGistic Tracking', version: APP_VERSION, bound: c.bound, needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
 }
 
 function srcView_(id) {
@@ -73,8 +75,8 @@ function srcView_(id) {
   catch (e) { return { id: id, error: e.message }; }
 }
 function actGetSettings_() {
-  var c = cfg_();
-  return { pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId) };
+  var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
+  return { bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**
@@ -83,7 +85,7 @@ function actGetSettings_() {
  */
 function actSetSources_(me, b) {
   var p = props_(), c = cfg_(), res = {};
-  var prId = idFromUrl_(b.prUrl), masterId = b.masterUrl ? idFromUrl_(b.masterUrl) : '', dbId = b.dbUrl ? idFromUrl_(b.dbUrl) : c.dbId;
+  var prId = idFromUrl_(b.prUrl), masterId = b.masterUrl ? idFromUrl_(b.masterUrl) : c.masterId, dbId = b.dbUrl ? idFromUrl_(b.dbUrl) : c.dbId;
   if (!prId) fail_('invalid', 'Link Tracking PR tidak valid.');
   if (b.masterUrl && !masterId) fail_('invalid', 'Link Master Stok tidak valid.');
   if (masterId && masterId === prId) fail_('invalid', 'Link Master Stok sama dengan link Tracking PR.');
@@ -110,7 +112,13 @@ function actSetSources_(me, b) {
     dbId = createDb_();
     res.dbCreated = true;
   }
-  p.setProperties({ PR_ID: prId, MASTER_ID: masterId, DB_ID: dbId });
+  var bound = boundSs_(), bid = bound ? bound.getId() : '';
+  // jika script terpasang di Master: Master & Data Sheet default = file itu sendiri, tidak perlu disimpan
+  p.setProperty('PR_ID', prId);
+  if (masterId && masterId !== bid) p.setProperty('MASTER_ID', masterId); else p.deleteProperty('MASTER_ID');
+  if (dbId !== bid) p.setProperty('DB_ID', dbId); else p.deleteProperty('DB_ID');
+  p.deleteProperty('PR_SYNCED');
+  res.pr.copied = !!loadPR_(true);
   bumpDataVersion_();
   log_(me.email, 'setSources', 'PR=' + prId + ' MASTER=' + (masterId || '-') + ' DB=' + dbId);
   res.settings = actGetSettings_();
@@ -125,6 +133,11 @@ function actSetSources_(me, b) {
 function setup() {
   secret_();
   DriveApp.getRootFolder();
+  var b = boundSs_();
+  if (b) {
+    Object.keys(TABS).forEach(function (t) { ensureTab_(b, t, TABS[t]); });
+    console.log('Script terpasang di "' + b.getName() + '": Master & Data Sheet = file ini (tab MASTER, TX, ITEMS, LOG, PR_DATA).');
+  }
   if (needsSetup_()) {
     var key = props_().getProperty('SETUP_KEY');
     if (!key) { key = Utilities.getUuid().slice(0, 8).toUpperCase(); props_().setProperty('SETUP_KEY', key); }
@@ -138,4 +151,30 @@ function setup() {
 function resetAdmins() {
   props_().deleteProperty('ADMINS');
   setup();
+}
+
+// ---------- sinkron otomatis Tracking PR → tab PR_DATA ----------
+function syncPR() {
+  var c = cfg_(); if (!c.prId) { console.log('Sumber Tracking PR belum diatur.'); return; }
+  var info = fileInfo_(c.prId, true);
+  if (props_().getProperty('PR_SYNCED') === c.prId + ':' + info.updated) { console.log('Tracking PR belum berubah.'); return; }
+  loadPR_(true); bumpDataVersion_();
+  console.log('Tracking PR disalin ke tab ' + PR_COPY_TAB + '.');
+}
+function autoSyncOn_() { try { return ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'syncPR'; }); } catch (e) { return false; } }
+function setAutoSync_(on) {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'syncPR') ScriptApp.deleteTrigger(t); });
+  if (on) ScriptApp.newTrigger('syncPR').timeBased().everyMinutes(10).create();
+}
+/** Jalankan dari editor untuk menyalakan sinkron otomatis tiap 10 menit. */
+function pasangSinkronOtomatis() { setAutoSync_(true); console.log('Sinkron otomatis Tracking PR aktif (tiap 10 menit).'); }
+
+/** Menu di Google Sheet Master (hanya muncul jika script terpasang di Master). */
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi().createMenu('LoGistic')
+      .addItem('Sinkron Tracking PR sekarang', 'syncPR')
+      .addItem('Nyalakan sinkron otomatis (10 menit)', 'pasangSinkronOtomatis')
+      .addToUi();
+  } catch (e) { /* bukan konteks Sheet */ }
 }

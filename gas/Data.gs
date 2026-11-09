@@ -14,9 +14,11 @@ var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'mi
 
 function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); }
 function props_() { return PropertiesService.getScriptProperties(); }
+/** Spreadsheet tempat script terpasang (script di Master: Ekstensi → Apps Script). null jika script berdiri sendiri. */
+function boundSs_() { try { return SpreadsheetApp.getActiveSpreadsheet() || null; } catch (e) { return null; } }
 function cfg_() {
-  var p = props_();
-  return { prId: p.getProperty('PR_ID') || '', masterId: p.getProperty('MASTER_ID') || '', dbId: p.getProperty('DB_ID') || '' };
+  var p = props_(), b = boundSs_(), bid = b ? b.getId() : '';
+  return { prId: p.getProperty('PR_ID') || '', masterId: p.getProperty('MASTER_ID') || bid, dbId: p.getProperty('DB_ID') || bid, bound: !!b };
 }
 function todayISO_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'); }
 
@@ -77,19 +79,60 @@ function readValues_(info, preferTab) {
   }
 }
 
+/**
+ * Tracking PR: file sumber hanya DIBACA (akses Pelihat cukup). Setiap kali file sumber berubah,
+ * isinya disalin ke tab PR_DATA di Master/Data Sheet, lalu aplikasi membaca dari salinan itu.
+ */
 function loadPR_(fresh) {
-  var id = cfg_().prId;
-  if (!id) fail_('not_configured', 'Sumber Tracking PR belum diatur admin.');
-  var info = fileInfo_(id, fresh), ck = 'pr:' + id + ':' + info.updated;
+  var c = cfg_();
+  if (!c.prId) fail_('not_configured', 'Sumber Tracking PR belum diatur admin.');
+  var info = fileInfo_(c.prId, fresh), ck = 'pr:' + c.prId + ':' + info.updated;
   var hit = cacheGet_(ck);
   if (hit) return hit;
-  var all = readValues_(info, 'TRACKING PR'), hi = findHeaderRow_(all);
+  var all = null;
+  if (c.dbId) {
+    if (props_().getProperty('PR_SYNCED') !== c.prId + ':' + info.updated) all = syncPRCopy_(info);
+    if (!all) all = readPRCopy_();
+  }
+  if (!all) all = readValues_(info, 'TRACKING PR');
+  var res = parsePRValues_(all, info);
+  cachePut_(ck, res, 21600);
+  return res;
+}
+function parsePRValues_(all, info) {
+  var hi = findHeaderRow_(all);
   if (hi < 0) fail_('shape', 'Tracking PR: kolom "Deskripsi" tidak ditemukan. Pastikan tab pertama memakai format log book.');
   var parsed = parsePR_(all.slice(hi + 1), todayISO_());
   if (parsed.items.length < 1) fail_('shape', 'Tracking PR: tidak ada item PR yang terbaca.');
-  var res = { prs: parsed.prs, items: parsed.items, source: { name: info.name, url: info.url, updated: info.updated }, readAt: Date.now() };
-  cachePut_(ck, res, 21600);
-  return res;
+  return { prs: parsed.prs, items: parsed.items, source: { name: info.name, url: info.url, updated: info.updated, copiedAt: props_().getProperty('PR_SYNCED_AT') || '' }, readAt: Date.now() };
+}
+
+var PR_COPY_TAB = 'PR_DATA';
+/** Salin isi Tracking PR ke tab PR_DATA (semua sebagai teks, tanggal ISO). Mengembalikan nilai yang disalin. */
+function syncPRCopy_(info) {
+  var all = readValues_(info, 'TRACKING PR');
+  if (findHeaderRow_(all) < 0) fail_('shape', 'Tracking PR: kolom "Deskripsi" tidak ditemukan.');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return all; // sinkron lain sedang berjalan: pakai data yang sudah dibaca
+  try {
+    var ss = SpreadsheetApp.openById(cfg_().dbId), sh = ss.getSheetByName(PR_COPY_TAB) || ss.insertSheet(PR_COPY_TAB);
+    var width = Math.max(21, all.reduce(function (m, r) { return Math.max(m, r.length); }, 0));
+    var rows = [['SALINAN OTOMATIS dari "' + info.name + '" — jangan diedit, akan ditimpa', info.url, 'Disalin: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')]
+      .concat(Array(width - 3).fill(''))].concat(all.map(function (r) {
+        var o = []; for (var i = 0; i < width; i++) o.push(r[i] === undefined || r[i] === null ? '' : String(r[i])); return o;
+      }));
+    sh.clearContents();
+    if (sh.getMaxRows() < rows.length) sh.insertRowsAfter(sh.getMaxRows(), rows.length - sh.getMaxRows());
+    if (sh.getMaxColumns && sh.getMaxColumns() < width) sh.insertColumnsAfter(sh.getMaxColumns(), width - sh.getMaxColumns());
+    sh.getRange(1, 1, rows.length, width).setNumberFormat('@').setValues(rows);
+    props_().setProperties({ PR_SYNCED: info.id + ':' + info.updated, PR_SYNCED_AT: String(Date.now()) });
+    return all;
+  } finally { lock.releaseLock(); }
+}
+function readPRCopy_() {
+  var sh = SpreadsheetApp.openById(cfg_().dbId).getSheetByName(PR_COPY_TAB);
+  if (!sh || sh.getLastRow() < 2) return null;
+  return sh.getDataRange().getValues().slice(1);
 }
 
 function loadMaster_(fresh) {
