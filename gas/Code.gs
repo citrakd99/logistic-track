@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.3.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -26,6 +26,7 @@ function doGet(e) {
   return handle_(function () {
     if (action === 'status') return actStatus_();
     if (action !== 'pr' && action !== 'stock') fail_('invalid', 'Aksi tidak dikenal.');
+    requireView_(e && e.parameter && e.parameter.vt);
     // respons publik di-cache singkat agar lalu lintas tinggi tidak menghabiskan kuota
     var ck = 'pub:' + action + ':' + dataVersion_();
     if (!fresh) { var hit = cacheGet_(ck); if (hit) return hit; }
@@ -42,6 +43,15 @@ function doPost(e) {
     var a = String(b.action || '');
     if (a === 'login') return actLogin_(b);
     if (a === 'setupAdmin') return actSetupAdmin_(b);
+    if (a === 'viewerLogin') return actViewerLogin_(b);
+    if (a === 'getPR' || a === 'getStock') {
+      requireView_(b.token);
+      var action = a === 'getPR' ? 'pr' : 'stock', ck = 'pub:' + action + ':' + dataVersion_();
+      if (!b.fresh) { var hit = cacheGet_(ck); if (hit) return hit; }
+      var data = action === 'pr' ? actPR_(b.fresh) : actStock_(b.fresh);
+      cachePut_(ck, data, PUBLIC_CACHE_SEC);
+      return data;
+    }
     var me = requireAdmin_(b.token);
     switch (a) {
       case 'me': return { email: me.email, name: me.name };
@@ -58,6 +68,7 @@ function doPost(e) {
       case 'changePassword': return actChangePassword_(me, b);
       case 'refresh': bumpDataVersion_(); return { ok: true };
       case 'syncPR': props_().deleteProperty('PR_SYNCED'); loadPR_(true); bumpDataVersion_(); log_(me.email, 'syncPR', ''); return actGetSettings_();
+      case 'setViewerPin': return actSetViewerPin_(me, b);
       case 'setAutoSync': setAutoSync_(b.on !== false); log_(me.email, 'setAutoSync', String(b.on !== false)); return actGetSettings_();
     }
     fail_('invalid', 'Aksi tidak dikenal.');
@@ -66,7 +77,7 @@ function doPost(e) {
 
 function actStatus_() {
   var c = cfg_();
-  return { app: 'LoGistic Tracking', version: APP_VERSION, bound: c.bound, needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
+  return { app: 'LoGistic Tracking', version: APP_VERSION, bound: c.bound, pin: pinOn_(), needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
 }
 
 function srcView_(id) {
@@ -76,7 +87,8 @@ function srcView_(id) {
 }
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
-  return { bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  var pc = pinCfg_();
+  return { pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**

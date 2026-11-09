@@ -10,7 +10,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.3.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -30,6 +30,7 @@ function doGet(e) {
   return handle_(function () {
     if (action === 'status') return actStatus_();
     if (action !== 'pr' && action !== 'stock') fail_('invalid', 'Aksi tidak dikenal.');
+    requireView_(e && e.parameter && e.parameter.vt);
     // respons publik di-cache singkat agar lalu lintas tinggi tidak menghabiskan kuota
     var ck = 'pub:' + action + ':' + dataVersion_();
     if (!fresh) { var hit = cacheGet_(ck); if (hit) return hit; }
@@ -46,6 +47,15 @@ function doPost(e) {
     var a = String(b.action || '');
     if (a === 'login') return actLogin_(b);
     if (a === 'setupAdmin') return actSetupAdmin_(b);
+    if (a === 'viewerLogin') return actViewerLogin_(b);
+    if (a === 'getPR' || a === 'getStock') {
+      requireView_(b.token);
+      var action = a === 'getPR' ? 'pr' : 'stock', ck = 'pub:' + action + ':' + dataVersion_();
+      if (!b.fresh) { var hit = cacheGet_(ck); if (hit) return hit; }
+      var data = action === 'pr' ? actPR_(b.fresh) : actStock_(b.fresh);
+      cachePut_(ck, data, PUBLIC_CACHE_SEC);
+      return data;
+    }
     var me = requireAdmin_(b.token);
     switch (a) {
       case 'me': return { email: me.email, name: me.name };
@@ -62,6 +72,7 @@ function doPost(e) {
       case 'changePassword': return actChangePassword_(me, b);
       case 'refresh': bumpDataVersion_(); return { ok: true };
       case 'syncPR': props_().deleteProperty('PR_SYNCED'); loadPR_(true); bumpDataVersion_(); log_(me.email, 'syncPR', ''); return actGetSettings_();
+      case 'setViewerPin': return actSetViewerPin_(me, b);
       case 'setAutoSync': setAutoSync_(b.on !== false); log_(me.email, 'setAutoSync', String(b.on !== false)); return actGetSettings_();
     }
     fail_('invalid', 'Aksi tidak dikenal.');
@@ -70,7 +81,7 @@ function doPost(e) {
 
 function actStatus_() {
   var c = cfg_();
-  return { app: 'LoGistic Tracking', version: APP_VERSION, bound: c.bound, needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
+  return { app: 'LoGistic Tracking', version: APP_VERSION, bound: c.bound, pin: pinOn_(), needsSetup: needsSetup_(), configured: { pr: !!c.prId, master: !!c.masterId, db: !!c.dbId }, today: todayISO_() };
 }
 
 function srcView_(id) {
@@ -80,7 +91,8 @@ function srcView_(id) {
 }
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
-  return { bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  var pc = pinCfg_();
+  return { pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**
@@ -317,6 +329,53 @@ function actChangePassword_(me, b) {
   return { token: issueToken_(a), email: a.email, name: a.name, exp: Date.now() + TOKEN_TTL_MS };
 }
 
+// ---------- PIN viewer ----------
+// Jika PIN aktif, data hanya bisa dibaca dengan token viewer (didapat setelah memasukkan PIN) atau token admin.
+var VIEWER_TTL_MS = 30 * 24 * 3600 * 1000;
+var PIN_MAX_FAIL = 20;
+
+function pinCfg_() { try { return JSON.parse(props_().getProperty('VIEWER_PIN') || 'null'); } catch (e) { return null; } }
+function pinOn_() { var c = pinCfg_(); return !!(c && c.hash); }
+
+function issueViewerToken_(c) {
+  var payload = b64u_(JSON.stringify({ t: 'v', v: c.ver, x: Date.now() + VIEWER_TTL_MS }));
+  return payload + '.' + b64u_(Utilities.computeHmacSha256Signature(payload, secret_()));
+}
+/** true jika token boleh membaca data: PIN mati, token admin sah, atau token viewer sah untuk versi PIN saat ini. */
+function canView_(token) {
+  if (!pinOn_()) return true;
+  var parts = String(token || '').split('.');
+  if (parts.length !== 2) return false;
+  if (!safeEq_(b64u_(Utilities.computeHmacSha256Signature(parts[0], secret_())), parts[1])) return false;
+  var p; try { p = JSON.parse(fromB64u_(parts[0])); } catch (e) { return false; }
+  if (!p.x || p.x < Date.now()) return false;
+  if (p.t === 'v') return p.v === pinCfg_().ver;
+  var a = findAdmin_(p.e);
+  return !!(a && (a.ver || 1) === p.v);
+}
+function requireView_(token) { if (!canView_(token)) fail_('pin_required', 'Masukkan PIN untuk melihat data.'); }
+
+function actViewerLogin_(b) {
+  var c = pinCfg_();
+  if (!c || !c.hash) return { token: '', exp: 0, pin: false };
+  var cache = CacheService.getScriptCache(), n = +(cache.get('pinfail') || 0);
+  if (n >= PIN_MAX_FAIL) fail_('locked', 'Terlalu banyak PIN salah. Coba lagi dalam 15 menit.');
+  if (!safeEq_(hashPw_(String(b.pin || '').trim(), c.salt), c.hash)) { cache.put('pinfail', String(n + 1), LOGIN_LOCK_SEC); fail_('unauthorized', 'PIN salah.'); }
+  return { token: issueViewerToken_(c), exp: Date.now() + VIEWER_TTL_MS, pin: true };
+}
+/** Admin: pasang/ganti PIN (semua viewer harus memasukkan PIN baru) atau matikan PIN (pin kosong + off=true). */
+function actSetViewerPin_(me, b) {
+  var p = props_(), old = pinCfg_();
+  if (b.off === true) { p.deleteProperty('VIEWER_PIN'); log_(me.email, 'viewerPin', 'dimatikan'); bumpDataVersion_(); return { pin: false }; }
+  var pin = String(b.pin || '').trim();
+  if (!/^\d{6,12}$/.test(pin)) fail_('invalid', 'PIN harus 6–12 digit angka.');
+  var salt = Utilities.getUuid();
+  p.setProperty('VIEWER_PIN', JSON.stringify({ salt: salt, hash: hashPw_(pin, salt), ver: (old && old.ver || 0) + 1, at: Date.now(), by: me.email }));
+  log_(me.email, 'viewerPin', old ? 'diganti' : 'diaktifkan');
+  bumpDataVersion_();
+  return { pin: true };
+}
+
 // ===== Data.gs =====
 /**
  * Data.gs — akses Google Sheet: sumber PR & Master (baca saja), Data Sheet aplikasi
@@ -340,7 +399,9 @@ function cfg_() {
   var p = props_(), b = boundSs_(), bid = b ? b.getId() : '';
   return { prId: p.getProperty('PR_ID') || '', masterId: p.getProperty('MASTER_ID') || bid, dbId: p.getProperty('DB_ID') || bid, bound: !!b };
 }
-function todayISO_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'); }
+/** Zona waktu aman: file yang dibuka dengan akses Pelihat bisa mengembalikan zona kosong. */
+function tz_(t) { t = typeof t === 'string' ? t.trim() : ''; if (t) return t; try { t = Session.getScriptTimeZone(); } catch (e) { t = ''; } return (typeof t === 'string' && t) ? t : 'Asia/Jakarta'; }
+function todayISO_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd'); }
 
 function idFromUrl_(u) {
   u = String(u || '').trim();
@@ -388,7 +449,7 @@ function readValues_(info, preferTab) {
     ssId = tmpId = tmp.id;
   }
   try {
-    var ss = SpreadsheetApp.openById(ssId), tz = ss.getSpreadsheetTimeZone();
+    var ss = SpreadsheetApp.openById(ssId), tz; try { tz = tz_(ss.getSpreadsheetTimeZone()); } catch (e) { tz = tz_(); }
     var sheets = ss.getSheets();
     var sh = sheets.filter(function (s) { return s.getName().trim().toUpperCase() === preferTab; })[0] || sheets[0];
     return sh.getDataRange().getValues().map(function (r) {
@@ -437,7 +498,7 @@ function syncPRCopy_(info) {
   try {
     var ss = SpreadsheetApp.openById(cfg_().dbId), sh = ss.getSheetByName(PR_COPY_TAB) || ss.insertSheet(PR_COPY_TAB);
     var width = Math.max(21, all.reduce(function (m, r) { return Math.max(m, r.length); }, 0));
-    var rows = [['SALINAN OTOMATIS dari "' + info.name + '" — jangan diedit, akan ditimpa', info.url, 'Disalin: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')]
+    var rows = [['SALINAN OTOMATIS dari "' + info.name + '" — jangan diedit, akan ditimpa', info.url, 'Disalin: ' + Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]
       .concat(Array(width - 3).fill(''))].concat(all.map(function (r) {
         var o = []; for (var i = 0; i < width; i++) o.push(r[i] === undefined || r[i] === null ? '' : String(r[i])); return o;
       }));
@@ -502,7 +563,7 @@ function readTable_(ss, name) {
   var head = sh.getRange(1, 1, 1, lc).getValues()[0], vals = sh.getRange(2, 1, lr - 1, lc).getValues();
   return vals.map(function (r, i) {
     var o = { _row: i + 2 };
-    head.forEach(function (h, j) { var v = r[j]; o[h] = isDate_(v) ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd') : v; });
+    head.forEach(function (h, j) { var v = r[j]; o[h] = isDate_(v) ? Utilities.formatDate(v, tz_(), 'yyyy-MM-dd') : v; });
     return o;
   }).filter(function (o) { return o[head[0]] !== '' && o[head[0]] !== null; });
 }

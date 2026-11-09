@@ -4,7 +4,7 @@ LoGistic Tracking adalah satu web app untuk memantau **Tracking PR** (permintaan
 
 | Peran | Login | Bisa apa |
 |---|---|---|
-| **Viewer** | Tidak perlu | Melihat Tracking PR, stok, riwayat keluar-masuk, alat dipinjam, dan export Excel/PDF |
+| **Viewer** | Tidak perlu, atau **PIN** jika diaktifkan admin | Melihat Tracking PR, stok, riwayat keluar-masuk, alat dipinjam, dan export Excel/PDF |
 | **Admin** | Email + password | Semua yang bisa dilakukan Viewer, ditambah: catat keluar/pinjam/kembali/koreksi, edit/batalkan transaksi, tambah/ubah barang, atur sumber data dan admin |
 
 ## Aplikasi (PWA)
@@ -91,5 +91,5 @@ npm run dev -- path/ke/tracking-pr.xlsx   # http://localhost:8787 (admin@demo.id
 - Apps Script memberi jeda 1–4 detik per permintaan (*cold start*). Respons publik di-cache 60 detik, dan data sumber di-cache sampai file Sheet berubah.
 - Kuota Apps Script akun gratis kira-kira 20.000 panggilan per hari. Jumlah ini cukup untuk tim di bawah 50 orang.
 - Apps Script tidak menerima IP klien, jadi pembatasan laju hanya ada pada login (5 kali gagal → dikunci 15 menit per email).
-- Data viewer bersifat publik bagi siapa pun yang tahu URL situs, termasuk nama supplier, no. PO, dan qty.
+- Tanpa PIN viewer, data bersifat publik bagi siapa pun yang tahu URL situs. Aktifkan **PIN viewer** di Pengaturan untuk membatasi. Batas salah PIN berlaku global (20 kali per 15 menit), karena Apps Script tidak menerima IP klien.
 - Belum diuji pada beban serentak tinggi. Penulisan diserialisasi dengan `LockService`, dengan batas tunggu 20 detik.
