@@ -1,8 +1,8 @@
 /* LoGistic Tracking — service worker.
  * File aplikasi: network-first (versi terbaru selalu dipakai saat online), cadangan dari cache saat offline.
  * Data API (script.google.com) TIDAK di-cache di sini; app menyimpan salinan data terakhir sendiri. */
-const VERSION = 'lt-v1.4.0';
-const SHELL = ['./', './index.html', './assets/style.css', './assets/app.js', './assets/config.js', './manifest.webmanifest',
+const VERSION = 'lt-__BUILD__'; // diganti otomatis dengan commit saat deploy
+const SHELL = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-192.png', './icons/favicon-32.png'];
 
 self.addEventListener('install', e => {
@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => { const cp = res.clone(); caches.open(VERSION).then(c => c.put(req, cp)); return res; })));
     return;
   }
-  e.respondWith(fetch(req).then(res => {
+  e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
     if (res.ok) { const cp = res.clone(); caches.open(VERSION).then(c => c.put(req, cp)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error()))));

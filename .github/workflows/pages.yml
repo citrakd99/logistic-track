@@ -39,6 +39,9 @@ jobs:
           cp index.html manifest.webmanifest sw.js _site/
           cp -r assets icons _site/
           touch _site/.nojekyll
+          # cache-busting: setiap deploy memakai versi aset & cache service worker baru
+          BUILD="${GITHUB_SHA::7}"
+          sed -i "s/__BUILD__/${BUILD}/g" _site/index.html _site/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

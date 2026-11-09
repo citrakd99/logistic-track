@@ -809,7 +809,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.4.0';
+    $('#ver').textContent = 'v1.5.0';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }

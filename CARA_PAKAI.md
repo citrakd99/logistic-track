@@ -26,7 +26,9 @@ Jika admin mengaktifkan **PIN viewer** (Pengaturan → PIN viewer), aplikasi mem
 | **Alat** | *Peminjaman*: dipinjam lalu dikembalikan (tab Alat dipinjam) | bor, gerinda, theodolite |
 | **APD** | *Serah APD*: diserahkan ke pekerja, tidak kembali, nama penerima wajib | sepatu safety, helm, sarung tangan, rompi |
 
-Kategori ditentukan dari kolom **Kategori** di tab MASTER (isi `Material`, `Alat`, atau `APD`). Kalau kolom itu kosong, kategori ditebak dari nama barang dan diberi tanda **?**. Admin bisa membetulkannya dengan *Koreksi kategori*.
+Kategori ditentukan dari kolom **Kategori** di tab MASTER (dropdown `Material` / `Alat` / `APD`). Kalau kolom itu kosong, kategori ditebak dari nama barang dan diberi tanda **?**.
+
+**Tab MASTER adalah sumber utama.** Perubahan kategori, stok awal, rak, minimum, dan catatan dari aplikasi (Koreksi kategori, Edit barang, + Barang) **langsung ditulis ke tab MASTER**. Barang yang belum ada di MASTER (misalnya baru datang dari PR) otomatis ditambahkan sebagai baris baru. Sebaliknya, perubahan langsung di Sheet MASTER juga terbaca di aplikasi setelah **↻ Muat ulang**.
 
 ## Untuk admin
 
@@ -64,6 +66,8 @@ Klik **Login admin** di kanan atas.
 | *Kolom "Deskripsi" tidak ditemukan* | Format Tracking PR berubah. Tab pertama (atau tab bernama `TRACKING PR`) harus memakai format log book, dengan judul kolom B = `Deskripsi`. |
 | *Kolom "Nama Barang" tidak ditemukan* | Master Stok harus punya tab `MASTER` dengan judul kolom `Nama Barang · Satuan · Kategori · Stok Awal · Lokasi Rak · Stok Minimum · Catatan`. |
 | *Argumen tak valid: timeZone* saat Uji & simpan | Sudah diperbaiki di v1.3.0: file yang dibuka dengan akses Pelihat tidak mengirim zona waktu. Tempel ulang `dist/LoGistic.gs` ke Apps Script lalu **Kelola deployment → Edit → Versi baru → Terapkan**. |
+| Tampilan lama / fitur baru tidak muncul (versi di bawah halaman tidak sesuai) | Browser masih memakai file lama. Di laptop tekan **Ctrl+Shift+R**; di HP tutup lalu buka lagi aplikasinya. Mulai v1.5.0 setiap rilis otomatis memaksa file baru dimuat. |
+| Dropdown kategori di Sheet MASTER belum ada APD | Menu Sheet **LoGistic → Pasang dropdown kategori**, atau klik **Uji & simpan** di Pengaturan. |
 | *Masukkan PIN* / *PIN salah* | Minta PIN terbaru ke admin. Salah 20 kali (dari semua perangkat) → dikunci 15 menit. |
 | *Sesi berakhir* | Sesi admin berlaku 12 jam. Login lagi. |
 | *Terlalu banyak percobaan gagal* | Login salah 5 kali. Tunggu 15 menit. |

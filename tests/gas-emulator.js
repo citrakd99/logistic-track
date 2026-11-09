@@ -22,6 +22,8 @@ class Sheet {
     return {
       getValues() { const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const v = (sh.data[r - 1 + i] || [])[c - 1 + j]; row.push(v === undefined || v === null ? '' : v); } out.push(row); } return out; },
       setValues(v) { if (v.length !== nr || v[0].length !== nc) throw new Error('Ukuran setValues tidak cocok'); for (let i = 0; i < nr; i++) { sh.data[r - 1 + i] = sh.data[r - 1 + i] || []; for (let j = 0; j < nc; j++) sh.data[r - 1 + i][c - 1 + j] = v[i][j]; } return this; },
+      setValue(v) { sh.data[r - 1] = sh.data[r - 1] || []; sh.data[r - 1][c - 1] = v; return this; },
+      setDataValidation(rule) { sh.validation = { row: r, col: c, n: nr, rule }; return this; },
       setFontWeight() { return this; }, setNumberFormat() { return this; }
     };
   }
@@ -84,6 +86,7 @@ function createEnv(opts = {}) {
       newTrigger: fn => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => { const t = { getHandlerFunction: () => fn }; tr.push(t); return t; } }) }) })
     }; })(),
     SpreadsheetApp: {
+      newDataValidation: () => { const rule = {}; const b = { requireValueInList: (l) => { rule.list = l.slice(); return b; }, setAllowInvalid: (x) => { rule.allowInvalid = x; return b; }, setHelpText: () => b, build: () => rule }; return b; },
       getActiveSpreadsheet: () => (opts.boundId && files[opts.boundId] ? files[opts.boundId].ss : null),
       getUi: () => { throw new Error('no ui'); },
       openById: id => { const f = files[id]; if (!f || !f.ss) throw new Error('Spreadsheet tidak bisa dibuka: ' + id); return f.ss; },

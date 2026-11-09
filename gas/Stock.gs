@@ -130,6 +130,13 @@ function actSaveItem_(me, b) {
     var awal = pNum_(b.awal), min = pNum_(b.min);
     if (awal !== null && awal < 0) fail_('invalid', 'Stok awal tidak boleh minus.');
     if (min !== null && min < 0) fail_('invalid', 'Stok minimum tidak boleh minus.');
+    var rak = String(b.rak || '').trim().slice(0, 60), note = String(b.note || '').trim().slice(0, 300);
+    // utamakan tulis ke tab MASTER (sumber kebenaran); jika tidak bisa, simpan sebagai penimpa di ITEMS
+    if (upsertMaster_([{ key: key, name: name, unit: unit, kat: kat, awal: awal === null ? 0 : awal, rak: rak, min: min, note: note }])) {
+      clearOverrides_(ss, ctx.items, [key]);
+      log_(me.email, isNew ? 'addItem' : 'editItem', name + ' [' + unit + '] → MASTER');
+      return { key: key, master: true };
+    }
     var exist = ctx.items.filter(function (o) { return o.key === key; })[0];
     var row = {
       key: key, name: name, unit: unit, kat: kat, awal: awal === null ? 0 : awal, rak: String(b.rak || '').trim().slice(0, 60),
@@ -168,6 +175,14 @@ function actSetKat_(me, b) {
   return withLock_(function () {
     var ss = db_(), ctx = stockContext_(ss, false);
     var M = buildStock_(ctx.master.rows, ctx.items, ctx.feed, ctx.tx), byKey = {}, add = [], n = 0;
+    var valid = keys.filter(function (k) { return M[k]; });
+    if (upsertMaster_(valid.map(function (k) { return { key: k, name: M[k].name, unit: M[k].unit, kat: b.kat }; }))) {
+      // hapus kategori penimpa di ITEMS agar nilai di Master yang berlaku
+      var set = {}; valid.forEach(function (k) { set[k] = 1; });
+      ctx.items.forEach(function (o) { if (set[o.key] && o.kat) { var r = stripRow_(o); r.kat = ''; updateRow_(ss, 'ITEMS', o._row, r); } });
+      log_(me.email, 'setKat', b.kat + ' × ' + valid.length + ' → MASTER');
+      return { updated: valid.length, master: true };
+    }
     ctx.items.forEach(function (o) { byKey[o.key] = o; });
     keys.forEach(function (k) {
       var it = M[k]; if (!it) return;
