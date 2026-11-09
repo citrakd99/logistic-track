@@ -6,7 +6,7 @@
  * Jika dikosongkan, aplikasi meminta URL API saat dibuka (disimpan di browser itu saja).
  */
 window.LT_CONFIG = {
-  API_URL: '',
+  API_URL: 'https://script.google.com/macros/s/AKfycbwmU8PukdO1aeGyJj3d-zSviRcx-g7d1jeWdTxlZfOpfPEe7VuVqTCqnUKyfXZl-3ja/exec',
   // Mode sementara: selama API_URL kosong, menu membuka aplikasi lama yang sudah berjalan di claude.ai.
   // Hapus/abaikan setelah API_URL diisi.
   LEGACY: {
