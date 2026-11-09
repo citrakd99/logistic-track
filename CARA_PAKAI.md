@@ -19,18 +19,29 @@ Jika admin mengaktifkan **PIN viewer** (Pengaturan → PIN viewer), aplikasi mem
 - Tab **Alat dipinjam**: alat yang belum kembali. Baris merah berarti sudah dipinjam lebih dari 7 hari.
 - Kategori yang diberi tanda **?** (misalnya `Material?`) ditebak dari nama barang. Admin bisa menetapkannya lewat *Edit barang*.
 
+## Kategori barang
+| Kategori | Cara keluar | Contoh |
+|---|---|---|
+| **Material** | *Pemakaian*: habis dipakai | kabel, baut, cat |
+| **Alat** | *Peminjaman*: dipinjam lalu dikembalikan (tab Alat dipinjam) | bor, gerinda, theodolite |
+| **APD** | *Serah APD*: diserahkan ke pekerja, tidak kembali, nama penerima wajib | sepatu safety, helm, sarung tangan, rompi |
+
+Kategori ditentukan dari kolom **Kategori** di tab MASTER (isi `Material`, `Alat`, atau `APD`). Kalau kolom itu kosong, kategori ditebak dari nama barang dan diberi tanda **?**. Admin bisa membetulkannya dengan *Koreksi kategori*.
+
 ## Untuk admin
 
 Klik **Login admin** di kanan atas.
 
 | Tugas | Caranya |
 |---|---|
-| Barang keluar (habis pakai) | Stok Gudang → **Catat keluar / pinjam** → *Pemakaian* → pilih barang, jumlah, penerima → Simpan. Satu catatan bisa berisi banyak barang (**+ Tambah barang**). |
+| Barang keluar (habis pakai) | Stok Gudang → **Catat keluar** → *Pemakaian* (jenis otomatis mengikuti kategori barang pertama) → pilih barang, jumlah, penerima → Simpan. Satu catatan bisa berisi banyak barang (**+ Tambah barang**). |
 | Pinjamkan alat | Form yang sama → *Peminjaman*. Atau klik barangnya → **Pinjamkan**. |
 | Alat kembali | Tab **Alat dipinjam** → **Catat kembali** → isi jumlah & kondisi. Pengembalian sebagian diperbolehkan. |
 | Stock opname | Klik barang → **Koreksi stok** → isi **stok fisik** hasil hitung. Selisihnya dicatat otomatis. Alasan wajib diisi. |
 | Salah input | Tab Riwayat → klik catatan → **Edit** atau **Batalkan**. Catatan lama tetap tersimpan sebagai *dibatalkan* (dicoret). |
 | Barang baru (tidak ada di Master/PR) | Tab Stok → **+ Barang**. |
+| **Koreksi kategori cepat** | Tab Stok → **Koreksi kategori** → ketuk Material / Alat / APD di tiap baris (langsung tersimpan). Untuk banyak barang: cari dulu (misalnya "sepatu") lalu **Semua → APD**. Pilihan filter *Belum pasti (tebakan)* menampilkan barang yang kategorinya masih tebakan. |
+| Serahkan APD ke pekerja | Klik barang APD → **Serahkan APD**, atau **Catat keluar** → *Serah APD* → isi nama pekerja & jabatan/area. |
 | Ubah kategori, stok awal, rak, minimum | Klik barang → **Edit barang**. |
 | Sembunyikan barang usang | Klik barang → **Sembunyikan**. Hanya bisa jika stoknya 0 dan tidak sedang dipinjam. |
 | Batasi siapa yang bisa melihat | **Pengaturan → PIN viewer** → isi PIN 6–12 digit → **Aktifkan PIN**. Bagikan PIN hanya ke tim. |

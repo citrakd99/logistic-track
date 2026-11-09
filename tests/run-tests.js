@@ -111,5 +111,18 @@ if (pr) t('Integrasi: stok dari PR nyata terhitung tanpa error', () => {
   console.log(`    ${f.rows.length} baris barang masuk → ${Object.keys(M).length} jenis barang`);
   assert.ok(Object.values(M).every(i => isFinite(i.stok)));
 });
+t('Kategori APD: tebakan nama & teks Master', () => {
+  ['Sepatu Safety Boot Kuning uk. 41', 'Helm Orange + Tali Dagu NSA', 'Sarung Tangan Las', 'Rompi Jaring Hijau', 'Ear Plug', 'Full Body Harnes Double Hock', 'Kacamata Be Safe Clear', 'Masker Medis 3 Ply']
+    .forEach(n => assert.strictEqual(L.guessKat_(n), 'APD', n));
+  assert.strictEqual(L.guessKat_('M/C Bor Beton'), 'Alat'); assert.strictEqual(L.guessKat_('Kabel NYM 3x2,5'), 'Material');
+  assert.strictEqual(L.katFrom_('APD'), 'APD'); assert.strictEqual(L.katFrom_('alat kerja'), 'Alat'); assert.strictEqual(L.katFrom_('Material'), 'Material'); assert.strictEqual(L.katFrom_(''), '');
+});
+t('Serah APD mengurangi stok permanen & wajib nama penerima', () => {
+  const s1 = { id: 'S1', type: 'serah', key: helm, qty: 4, date: TODAY, person: 'Joko', void: false };
+  const M = L.buildStock_(master, [], feed, [s1]); assert.strictEqual(M[helm].stok, 11); assert.strictEqual(M[helm].serahQty, 4); assert.strictEqual(M[helm].dipinjam, 0);
+  assert.ok(/penerima APD/.test(L.cleanTx_({ type: 'serah', key: helm, qty: 1, date: TODAY }, M).error));
+  assert.ok(L.validateLedgerChange_(master, [], feed, [], [Object.assign({}, s1, { qty: 99 })], [helm]));
+});
+t('Override kategori APD diterima', () => { const M = L.buildStock_(master, [{ key: bor, kat: 'APD', full: false }], feed, []); assert.strictEqual(M[bor].kat, 'APD'); });
 console.log(`\nHasil: ${pass} PASS, ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

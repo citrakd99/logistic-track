@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.3.0';
+var APP_VERSION = '1.4.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -62,6 +62,7 @@ function doPost(e) {
       case 'voidTx': return actVoidTx_(me, b);
       case 'saveItem': return actSaveItem_(me, b);
       case 'hideItem': return actHideItem_(me, b);
+      case 'setKat': return actSetKat_(me, b);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);

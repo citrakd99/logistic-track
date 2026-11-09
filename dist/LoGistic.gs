@@ -10,7 +10,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.3.0';
+var APP_VERSION = '1.4.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -66,6 +66,7 @@ function doPost(e) {
       case 'voidTx': return actVoidTx_(me, b);
       case 'saveItem': return actSaveItem_(me, b);
       case 'hideItem': return actHideItem_(me, b);
+      case 'setKat': return actSetKat_(me, b);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);
@@ -723,7 +724,7 @@ function actSaveItem_(me, b) {
       key = String(b.key); if (!M[key]) fail_('invalid', 'Barang tidak ditemukan.');
       name = M[key].name; unit = M[key].unit;
     }
-    var kat = b.kat === 'Alat' || b.kat === 'Material' ? b.kat : '';
+    var kat = isKat_(b.kat) ? b.kat : '';
     var awal = pNum_(b.awal), min = pNum_(b.min);
     if (awal !== null && awal < 0) fail_('invalid', 'Stok awal tidak boleh minus.');
     if (min !== null && min < 0) fail_('invalid', 'Stok minimum tidak boleh minus.');
@@ -757,6 +758,28 @@ function actHideItem_(me, b) {
 
 function uniq_(a) { var o = {}; a.forEach(function (x) { o[x] = 1; }); return Object.keys(o); }
 
+/** Koreksi kategori cepat (1..n barang sekaligus). Hanya mengubah kolom kategori; data lain barang tetap. */
+function actSetKat_(me, b) {
+  var keys = Array.isArray(b.keys) ? b.keys : [];
+  if (!isKat_(b.kat)) fail_('invalid', 'Kategori harus Material, Alat, atau APD.');
+  if (!keys.length || keys.length > 500) fail_('invalid', 'Pilih 1–500 barang.');
+  return withLock_(function () {
+    var ss = db_(), ctx = stockContext_(ss, false);
+    var M = buildStock_(ctx.master.rows, ctx.items, ctx.feed, ctx.tx), byKey = {}, add = [], n = 0;
+    ctx.items.forEach(function (o) { byKey[o.key] = o; });
+    keys.forEach(function (k) {
+      var it = M[k]; if (!it) return;
+      var ex = byKey[k];
+      if (ex) { var r = stripRow_(ex); r.kat = b.kat; r.updatedAt = Date.now(); r.updatedBy = me.email; updateRow_(ss, 'ITEMS', ex._row, r); }
+      else add.push({ key: k, name: it.name, unit: it.unit, kat: b.kat, hidden: false, full: false, source: 'override', updatedAt: Date.now(), updatedBy: me.email });
+      n++;
+    });
+    appendRows_(ss, 'ITEMS', add);
+    log_(me.email, 'setKat', b.kat + ' × ' + n);
+    return { updated: n };
+  });
+}
+
 // ===== Logic.gs =====
 /**
  * Logic.gs — fungsi murni (tanpa layanan Google) untuk parsing log book PR,
@@ -766,7 +789,11 @@ function uniq_(a) { var o = {}; a.forEach(function (x) { o[x] = 1; }); return Ob
  */
 
 var STATUSES = ['Belum Release PR', 'Belum PO', 'Belum Terkirim', 'Close', 'Cancel'];
-var TX_TYPES = ['pakai', 'pinjam', 'kembali', 'koreksi'];
+var TX_TYPES = ['pakai', 'pinjam', 'kembali', 'koreksi', 'serah'];
+var KATS = ['Material', 'Alat', 'APD'];
+function isKat_(k) { return KATS.indexOf(k) >= 0; }
+/** Kategori dari teks Master/override: "alat…" → Alat, "apd…" → APD, lainnya → Material. */
+function katFrom_(v) { var k = String(v || '').trim().toLowerCase(); if (!k) return ''; if (k.indexOf('alat') === 0) return 'Alat'; if (k.indexOf('apd') === 0) return 'APD'; return 'Material'; }
 var MONI = { jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, may: 5, jun: 6, jul: 7, agu: 8, agt: 8, aug: 8, sep: 9, okt: 10, oct: 10, nov: 11, des: 12, dec: 12 };
 var UNIT_ALIAS = { psg: 'pasang', pasang: 'pasang', pcs: 'pcs', pc: 'pcs', buah: 'pcs', bh: 'pcs', lsn: 'lusin', lusin: 'lusin', btg: 'batang', batang: 'batang', m: 'meter', mtr: 'meter', meter: 'meter', unit: 'unit', unt: 'unit', set: 'set', roll: 'roll', rol: 'roll', ls: 'ls', lot: 'ls', box: 'box', dus: 'dus', kg: 'kg', sak: 'sak', lembar: 'lembar', lbr: 'lembar', org: 'org', orang: 'org', pack: 'pack', pak: 'pack' };
 var ALAT_RE = /\b(m\/c|mesin|bor\b|gerinda|grinda|tangga|laptop|tang\b|obeng|meteran|waterpass|auto level|hammer|gergaji|palu|cutting torch|regulator|trafo|jackdrill|vibrator|gerobak|ashiba|proyektor|printer|modem|switch|hub\b|dispenser|fingerprint|tensi|ht\b|boomlift|scissor|chain ?saw|box alat|toolbox|kunci|multimeter|tester|sigmat|alat)/i;
@@ -781,7 +808,11 @@ function unitKey_(u) { var k = String(u || '').toLowerCase().replace(/[^a-z0-9]/
 function stockKey_(name, unit) { return normT_(name) + '|' + unitKey_(unit); }
 function keyOfPR_(p) { return String(p).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 function djb_(s) { var x = 5381; for (var ch of String(s)) x = ((x << 5) + x + ch.codePointAt(0)) | 0; return (x >>> 0).toString(36); }
-function guessKat_(name) { return /^(mata |kawat|batu )/i.test(name) ? 'Material' : (ALAT_RE.test(name) ? 'Alat' : 'Material'); }
+var APD_RE = /\b(apd|safety ?boot|sepatu safety|sepatu safty|safety shoes?|helm\b|helmet|sarung tangan|gloves?|rompi|vest|masker|respirator|kacamata|safety glass|goggles?|ear ?plug|ear ?muff|full ?body ?harn|body harness|harness|faceshield|face shield|kedok las|apron|wearpack|coverall|jas hujan|safety ?belt)/i;
+function guessKat_(name) {
+  if (APD_RE.test(name)) return 'APD';
+  return /^(mata |kawat|batu )/i.test(name) ? 'Material' : (ALAT_RE.test(name) ? 'Alat' : 'Material');
+}
 
 /** @param {*} v @param {string} today ISO tanggal hari ini (untuk tebakan tahun) */
 function pDate_(v, today) {
@@ -889,7 +920,7 @@ function parseMaster_(rows) {
     if (seen[key]) continue;
     seen[key] = 1;
     var kr = pStr_(r[2]).toLowerCase();
-    out.push({ key: key, name: name, unit: unit, kat: kr.indexOf('alat') === 0 ? 'Alat' : (kr ? 'Material' : ''), awal: pNum_(r[3]) || 0, rak: pStr_(r[4]), min: pNum_(r[5]), note: pStr_(r[6]) });
+    out.push({ key: key, name: name, unit: unit, kat: katFrom_(kr), awal: pNum_(r[3]) || 0, rak: pStr_(r[4]), min: pNum_(r[5]), note: pStr_(r[6]) });
   }
   return out;
 }
@@ -920,7 +951,7 @@ function prToStockFeed_(items) {
 function buildStock_(master, overrides, feed, tx) {
   var M = {};
   function get(key, name, unit) {
-    if (!M[key]) M[key] = { key: key, name: name, unit: unit, kat: '', katSrc: '', awal: 0, rak: '', min: null, note: '', inMaster: false, inApp: false, hidden: false, inQty: 0, outQty: 0, loanQty: 0, retQty: 0, adj: 0, last: '', ins: [], reqs: [] };
+    if (!M[key]) M[key] = { key: key, name: name, unit: unit, kat: '', katSrc: '', awal: 0, rak: '', min: null, note: '', inMaster: false, inApp: false, hidden: false, inQty: 0, outQty: 0, serahQty: 0, loanQty: 0, retQty: 0, adj: 0, last: '', ins: [], reqs: [] };
     return M[key];
   }
   (master || []).forEach(function (m) {
@@ -933,7 +964,7 @@ function buildStock_(master, overrides, feed, tx) {
     var it = get(o.key, o.name || '', o.unit || '');
     var full = o.full === true || String(o.full).toUpperCase() === 'TRUE';
     if (o.source === 'app') { it.inApp = true; if (o.name) it.name = o.name; if (o.unit) it.unit = o.unit; }
-    if (o.kat === 'Alat' || o.kat === 'Material') { it.kat = o.kat; it.katSrc = 'app'; }
+    if (isKat_(o.kat)) { it.kat = o.kat; it.katSrc = 'app'; }
     if (full) {
       it.awal = pNum_(o.awal) || 0; it.rak = pStr_(o.rak); it.min = pNum_(o.min); it.note = pStr_(o.note);
     } else {
@@ -953,6 +984,7 @@ function buildStock_(master, overrides, feed, tx) {
     if (isVoid_(t)) return;
     var it = get(t.key, t.name, t.unit), q = +t.qty || 0;
     if (t.type === 'pakai') it.outQty += q;
+    else if (t.type === 'serah') it.serahQty += q;
     else if (t.type === 'pinjam') it.loanQty += q;
     else if (t.type === 'kembali') it.retQty += q;
     else if (t.type === 'koreksi') it.adj += q;
@@ -977,7 +1009,7 @@ function buildStock_(master, overrides, feed, tx) {
     it.sisaCek = it.reqs.some(function (r) { return r.sisa === null; });
     if (!it.kat) { it.kat = guessKat_(it.name); it.katSrc = 'tebakan'; }
     it.dipinjam = round3_(it.loanQty - it.retQty);
-    it.stok = round3_(it.awal + it.inQty - it.outQty - it.loanQty + it.retQty + it.adj);
+    it.stok = round3_(it.awal + it.inQty - it.outQty - it.serahQty - it.loanQty + it.retQty + it.adj);
     it.status = it.stok <= 0 ? 'out' : (it.min != null && it.stok <= it.min ? 'low' : 'ok');
   });
   return M;
@@ -1039,7 +1071,7 @@ function cleanTx_(t, stockMap) {
   if (!isISO_(date)) return { error: 'Tanggal wajib diisi (format YYYY-MM-DD).' };
   if (type === 'kembali' && !pStr_(t.loanId)) return { error: 'Pengembalian harus merujuk catatan pinjam.' };
   if (type === 'koreksi' && !pStr_(t.reason)) return { error: 'Alasan koreksi wajib diisi.' };
-  if ((type === 'pakai' || type === 'pinjam') && !pStr_(t.person)) return { error: (type === 'pinjam' ? 'Nama peminjam' : 'Nama penerima') + ' wajib diisi.' };
+  if ((type === 'pakai' || type === 'pinjam' || type === 'serah') && !pStr_(t.person)) return { error: (type === 'pinjam' ? 'Nama peminjam' : type === 'serah' ? 'Nama penerima APD' : 'Nama penerima') + ' wajib diisi.' };
   return {
     tx: {
       type: type, key: it.key, name: it.name, unit: it.unit, kat: it.kat, qty: round3_(qty), date: date,
@@ -1050,7 +1082,7 @@ function cleanTx_(t, stockMap) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { pDate_, pNum_, parsePR_, parseMaster_, prToStockFeed_, buildStock_, openLoans_, validateLedgerChange_, cleanTx_, stockKey_, findHeaderRow_, isVoid_ };
+  module.exports = { guessKat_, katFrom_, pDate_, pNum_, parsePR_, parseMaster_, prToStockFeed_, buildStock_, openLoans_, validateLedgerChange_, cleanTx_, stockKey_, findHeaderRow_, isVoid_ };
 }
 
 // ===== Seed.gs =====

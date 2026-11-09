@@ -95,6 +95,16 @@ t('hideItem: barang masih ada stok ditolak; stok 0 boleh', () => {
   assert.ok(g.post({ action: 'hideItem', token: tok, key: key('Sub Panel 3&4') }).ok);
   st = g.get({ action: 'stock' }).data; assert.ok(st.items.find(i => i.name === 'Sub Panel 3&4').hidden);
 });
+t('setKat: koreksi cepat 2 barang ke APD, kategori tidak valid ditolak, data lain tetap', () => {
+  const k1 = key('Sepatu Safety Boot Kuning uk. 41'), k2 = key('Kabel NYM 3x2.5');
+  assert.strictEqual(g.post({ action: 'setKat', token: tok, keys: [k1], kat: 'Barang' }).code, 'invalid');
+  const r = g.post({ action: 'setKat', token: tok, keys: [k1, k2], kat: 'APD' }); assert.ok(r.ok, r.message); assert.strictEqual(r.data.updated, 2);
+  st = g.get({ action: 'stock' }).data;
+  const a = st.items.find(i => i.key === k1), b = st.items.find(i => i.key === k2);
+  assert.strictEqual(a.kat, 'APD'); assert.strictEqual(a.katSrc, 'app'); assert.strictEqual(a.rak, 'A1', 'rak dari Master tetap');
+  assert.strictEqual(b.kat, 'APD'); assert.strictEqual(b.rak, 'C3', 'rak hasil edit tetap');
+  const sv = g.post({ action: 'saveTx', token: tok, lines: [{ type: 'serah', key: k1, qty: 1, date: T, person: 'Joko', purpose: 'Rigger' }] }); assert.ok(sv.ok, sv.message);
+});
 t('seed kategori lama: 27 penanda masuk, dijalankan 2x tidak dobel', () => {
   g.seedKategoriAlatDariAppLama(); g.seedKategoriAlatDariAppLama();
   const ss = env.SpreadsheetApp.openById(env.__props.DB_ID); const rows = ss.getSheetByName('ITEMS').getLastRow() - 1;
