@@ -32,7 +32,7 @@
   ];
   const SCLS = Object.fromEntries(STATUSES.map(s => [s.k, s.cls]));
   const AGING_DAYS = 14, LOAN_LATE_DAYS = 7;
-  const TYPES = { in: ['Masuk', 'p-in'], pakai: ['Keluar', 'p-pakai'], pinjam: ['Pinjam', 'p-pinjam'], kembali: ['Kembali', 'p-kembali'], koreksi: ['Koreksi', 'p-koreksi'] };
+  const TYPES = { in: ['Masuk', 'p-in'], pakai: ['Keluar', 'p-pakai'], serah: ['Serah APD', 'p-serah'], pinjam: ['Pinjam', 'p-pinjam'], kembali: ['Kembali', 'p-kembali'], koreksi: ['Koreksi', 'p-koreksi'] };
   const ST_LABEL = { ok: ['Ada', 'p-ok'], low: ['Menipis', 'p-low'], out: ['Habis', 'p-out'] };
 
   // ---------- state ----------
@@ -379,11 +379,11 @@
     if (!state.stock) { v.innerHTML = state.stockErr ? errView(state.stockErr, 'retryST') : '<div class="loading">Memuat stok…</div>'; const r = $('#retryST'); if (r) r.onclick = () => loadStock(true); return; }
     const s = state.stock, f = state.sf, all = s.items.filter(i => !i.hidden), t = today();
     const c = { ok: all.filter(i => i.stok > 0).length, low: all.filter(i => i.status === 'low').length, out: all.filter(i => i.status === 'out').length, loan: s.loans.length,
-      today: s.tx.filter(x => !isVoid(x) && (x.type === 'pakai' || x.type === 'pinjam') && x.date === t).length };
+      today: s.tx.filter(x => !isVoid(x) && (x.type === 'pakai' || x.type === 'pinjam' || x.type === 'serah') && x.date === t).length };
     const late = s.loans.filter(l => daysSince(l.date) > LOAN_LATE_DAYS).length;
     const outSisa = all.filter(i => i.status === 'out' && i.sisaPR > 0).length;
     const k = (cls, key, n, lbl, w) => `<button class="kpi ${cls} ${state.sub === 'stok' && f.filter === key ? 'on' : ''}" data-kpi="${key}"><span class="lbl">${lbl}</span><span class="n">${n}</span><span class="w">${w}</span></button>`;
-    v.innerHTML = `<div class="kpis">${k('k-ok', 'ok', c.ok, 'Barang tersedia', `dari ${all.length} jenis`)}${k('k-low', 'low', c.low, 'Stok menipis', 'di bawah minimum')}${k('k-out', 'out', c.out, 'Stok habis', outSisa ? outSisa + ' masih ada sisa PR' : 'cek PR baru')}${k('k-loan', 'loan', c.loan, 'Alat dipinjam', late ? late + ' lewat ' + LOAN_LATE_DAYS + ' hari' : 'belum kembali')}${k('k-in', 'today', c.today, 'Keluar hari ini', 'pakai + pinjam')}</div>
+    v.innerHTML = `<div class="kpis">${k('k-ok', 'ok', c.ok, 'Barang tersedia', `dari ${all.length} jenis`)}${k('k-low', 'low', c.low, 'Stok menipis', 'di bawah minimum')}${k('k-out', 'out', c.out, 'Stok habis', outSisa ? outSisa + ' masih ada sisa PR' : 'cek PR baru')}${k('k-loan', 'loan', c.loan, 'Alat dipinjam', late ? late + ' lewat ' + LOAN_LATE_DAYS + ' hari' : 'belum kembali')}${k('k-in', 'today', c.today, 'Keluar hari ini', 'pakai + pinjam + APD')}</div>
       <div class="tabs stok-tabs" role="tablist">${[['stok', 'Stok'], ['riwayat', 'Riwayat keluar-masuk'], ['dipinjam', 'Alat dipinjam']].map(([id, l]) => `<a class="tab ${state.sub === id ? 'on' : ''}" href="#stok/${id}" role="tab" aria-selected="${state.sub === id}">${l}${id === 'dipinjam' ? ` <span class="cnt">${s.loans.length}</span>` : ''}</a>`).join('')}</div>
       <div id="sub"></div>`;
     $$('[data-kpi]', v).forEach(b => b.onclick = () => {
@@ -400,7 +400,7 @@
     const f = state.sf; let arr = state.stock.items.filter(i => f.showHidden ? true : !i.hidden);
     const q = f.q.toLowerCase().split(/\s+/).filter(Boolean);
     if (q.length) arr = arr.filter(i => { const h = (i.name + ' ' + i.rak + ' ' + i.note + ' ' + i.ins.map(r => r.prNo + ' ' + r.supplier).join(' ')).toLowerCase(); return q.every(w => h.includes(w)); });
-    if (f.kat) arr = arr.filter(i => i.kat === f.kat);
+    if (f.kat === '?') arr = arr.filter(i => i.katSrc === 'tebakan'); else if (f.kat) arr = arr.filter(i => i.kat === f.kat);
     if (f.filter === 'ok') arr = arr.filter(i => i.stok > 0);
     if (f.filter === 'low') arr = arr.filter(i => i.status === 'low');
     if (f.filter === 'out') arr = arr.filter(i => i.status === 'out');
@@ -408,23 +408,26 @@
     arr.sort((a, b) => f.sort === 'stok' ? b.stok - a.stok : f.sort === 'last' ? String(b.last || '').localeCompare(String(a.last || '')) : f.sort === 'low' ? a.stok - b.stok : a.name.localeCompare(b.name, 'id'));
     return arr;
   }
-  const katChip = i => `<span class="kat ${i.kat === 'Alat' ? 'alat' : ''}" title="Kategori ${i.katSrc === 'app' ? 'diubah di aplikasi' : i.katSrc === 'master' ? 'dari Master' : 'tebakan dari nama'}">${esc(i.kat)}${i.katSrc === 'tebakan' ? '?' : ''}</span>`;
+  const KATS = ['Material', 'Alat', 'APD'];
+  const KAT_HINT = { Material: 'dipakai habis', Alat: 'dipinjam & dikembalikan', APD: 'diserahkan ke orang' };
+  const katChip = i => `<span class="kat ${i.kat === 'Alat' ? 'alat' : i.kat === 'APD' ? 'apd' : ''}" title="Kategori ${i.katSrc === 'app' ? 'diubah di aplikasi' : i.katSrc === 'master' ? 'dari Master' : 'tebakan dari nama'}">${esc(i.kat)}${i.katSrc === 'tebakan' ? '?' : ''}</span>`;
 
   function renderStokList(el) {
     const f = state.sf, rows = stokRows(), LIM = 400;
     el.innerHTML = `<div class="tools" style="margin:10px 0">
         <input class="inp grow" id="sq" type="search" placeholder="Cari barang, rak, no. PR, supplier…" value="${esc(f.q)}" aria-label="Cari barang">
-        <select class="inp" id="skat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option><option ${f.kat === 'Material' ? 'selected' : ''}>Material</option><option ${f.kat === 'Alat' ? 'selected' : ''}>Alat</option></select>
+        <select class="inp" id="skat" style="width:auto" aria-label="Kategori"><option value="">Semua kategori</option>${KATS.map(k => `<option ${f.kat === k ? 'selected' : ''}>${k}</option>`).join('')}<option value="?" ${f.kat === '?' ? 'selected' : ''}>Belum pasti (tebakan)</option></select>
         <select class="inp" id="ssort" style="width:auto" aria-label="Urutan"><option value="nama" ${f.sort === 'nama' ? 'selected' : ''}>Nama A–Z</option><option value="last" ${f.sort === 'last' ? 'selected' : ''}>Aktivitas terakhir</option><option value="stok" ${f.sort === 'stok' ? 'selected' : ''}>Stok terbanyak</option><option value="low" ${f.sort === 'low' ? 'selected' : ''}>Stok tersedikit</option></select>
         <label class="check"><input type="checkbox" id="ssisa" ${f.onlySisa ? 'checked' : ''}>Ada sisa PR</label>
         ${isAdmin() ? `<label class="check"><input type="checkbox" id="shid" ${f.showHidden ? 'checked' : ''}>Tampilkan tersembunyi</label>` : ''}
         <button class="btn sm" id="sxlsx">Excel</button>
-        ${isAdmin() ? '<button class="btn sm" id="sNewItem">+ Barang</button><button class="btn sm primary" id="sOut">Catat keluar / pinjam</button>' : ''}
+        ${isAdmin() ? `<button class="btn sm ${f.katMode ? 'primary' : ''}" id="sKatMode" aria-pressed="${!!f.katMode}">${f.katMode ? '✓ Selesai koreksi' : 'Koreksi kategori'}</button><button class="btn sm" id="sNewItem">+ Barang</button><button class="btn sm primary" id="sOut">Catat keluar</button>` : ''}
       </div>
+      ${isAdmin() && f.katMode ? `<div class="katbar"><span>Koreksi cepat: ketuk kategori di tiap baris, langsung tersimpan. ${rows.length ? `Atau ubah <b>${Math.min(rows.length, LIM)}</b> barang yang tampil sekaligus:` : ''}</span>${rows.length ? KATS.map(k => `<button class="btn sm" data-bulkkat="${k}">Semua → ${k}</button>`).join('') : ''}</div>` : ''}
       <div class="resultline">${rows.length} jenis barang${f.filter ? ' · filter: ' + ({ ok: 'tersedia', low: 'menipis', out: 'habis' })[f.filter] + ' <button class="chip" id="sclr">✕</button>' : ''}</div>
       <div class="table" style="margin-top:6px"><div class="sr head"><div>Barang</div><div class="num c-hide" title="Sisa PR yang belum datang">Sisa PR</div><div class="num c-hide">Masuk</div><div class="num c-hide">Keluar</div><div class="num c-hide">Dipinjam</div><div class="num">Stok</div><div>Status</div></div>
       ${rows.slice(0, LIM).map(i => `<div class="sr ${i.hidden ? 'hid' : ''}" data-key="${esc(i.key)}" role="button" tabindex="0">
-        <div><div class="nm">${esc(i.name)}</div><div class="sub">${katChip(i)}${i.rak ? '<span>Rak ' + esc(i.rak) + '</span>' : ''}${i.hidden ? '<span>disembunyikan</span>' : ''}${i.sisaPR > 0 ? '<span>sisa PR ' + esc(fmtN(i.sisaPR)) + ' ' + esc(i.sisaUnit) + '</span>' : ''}</div></div>
+        <div><div class="nm">${esc(i.name)}</div><div class="sub">${isAdmin() && f.katMode ? `<span class="katseg" role="group" aria-label="Kategori ${esc(i.name)}">${KATS.map(k => `<button type="button" class="${i.kat === k ? (i.katSrc === 'tebakan' ? 'guess' : 'on') : ''}" data-setkat="${k}" data-k="${esc(i.key)}" title="${KAT_HINT[k]}">${k}</button>`).join('')}</span>` : katChip(i)}${i.rak ? '<span>Rak ' + esc(i.rak) + '</span>' : ''}${i.hidden ? '<span>disembunyikan</span>' : ''}${i.sisaPR > 0 ? '<span>sisa PR ' + esc(fmtN(i.sisaPR)) + ' ' + esc(i.sisaUnit) + '</span>' : ''}</div></div>
         <div class="num c-hide">${i.sisaPR > 0 ? esc(fmtN(i.sisaPR)) : '<span class="dim">–</span>'}</div>
         <div class="num c-hide">${esc(fmtN(i.awal + i.inQty))}</div><div class="num c-hide">${esc(fmtN(i.outQty))}</div><div class="num c-hide">${i.dipinjam ? esc(fmtN(i.dipinjam)) : '<span class="dim">–</span>'}</div>
         <div class="avail">${esc(fmtN(i.stok))}<div class="dim" style="font-size:12px;font-family:var(--f-body);font-weight:400">${esc(i.unit)}</div></div>
@@ -439,13 +442,16 @@
     $('#sxlsx').onclick = exportStock;
     const so = $('#sOut'); if (so) so.onclick = () => openOut('pakai');
     const sn = $('#sNewItem'); if (sn) sn.onclick = () => openItemForm(null);
-    $$('[data-key]', el).forEach(r => { r.onclick = () => openStockItem(r.dataset.key); r.onkeydown = e => { if (e.key === 'Enter') openStockItem(r.dataset.key); }; });
+    const km = $('#sKatMode'); if (km) km.onclick = () => { f.katMode = !f.katMode; render(); };
+    $$('[data-setkat]', el).forEach(b => b.onclick = e => { e.stopPropagation(); setKat([b.dataset.k], b.dataset.setkat); });
+    $$('[data-bulkkat]', el).forEach(b => b.onclick = () => { const keys = rows.slice(0, LIM).map(i => i.key); if (confirm(`Ubah kategori ${keys.length} barang yang tampil menjadi ${b.dataset.bulkkat}?`)) setKat(keys, b.dataset.bulkkat); });
+    $$('.sr[data-key]', el).forEach(r => { r.onclick = () => { if (!f.katMode) openStockItem(r.dataset.key); }; r.onkeydown = e => { if (e.key === 'Enter') openStockItem(r.dataset.key); }; });
   }
 
   function renderRiwayat(el) {
     const f = state.sf, LIM = 500;
     let ev = ledger();
-    if (f.htype === 'keluar') ev = ev.filter(e => e.type === 'pakai' || e.type === 'pinjam'); else if (f.htype) ev = ev.filter(e => e.type === f.htype);
+    if (f.htype === 'keluar') ev = ev.filter(e => e.type === 'pakai' || e.type === 'pinjam' || e.type === 'serah'); else if (f.htype) ev = ev.filter(e => e.type === f.htype);
     if (f.hfrom) ev = ev.filter(e => (e.date || '') >= f.hfrom);
     if (f.hto) ev = ev.filter(e => (e.date || '') <= f.hto);
     if (f.hq) { const q = f.hq.toLowerCase().split(/\s+/).filter(Boolean); ev = ev.filter(e => { const h = [e.name, e.person, e.purpose, e.prNo, e.supplier, e.note, e.reason].join(' ').toLowerCase(); return q.every(w => h.includes(w)); }); }
@@ -462,7 +468,7 @@
     });
     el.innerHTML = `<div class="tools" style="margin:10px 0">
         <input class="inp grow" id="hq" type="search" placeholder="Cari barang, nama orang, keperluan, PR…" value="${esc(f.hq)}" aria-label="Cari riwayat">
-        <select class="inp" id="htype" style="width:auto" aria-label="Jenis"><option value="">Semua jenis</option>${[['in', 'Masuk (PR)'], ['keluar', 'Keluar + Pinjam'], ['pakai', 'Pemakaian'], ['pinjam', 'Pinjam'], ['kembali', 'Kembali'], ['koreksi', 'Koreksi']].map(([k, l]) => `<option value="${k}" ${f.htype === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select class="inp" id="htype" style="width:auto" aria-label="Jenis"><option value="">Semua jenis</option>${[['in', 'Masuk (PR)'], ['keluar', 'Semua keluar'], ['pakai', 'Pemakaian'], ['serah', 'Serah APD'], ['pinjam', 'Pinjam'], ['kembali', 'Kembali'], ['koreksi', 'Koreksi']].map(([k, l]) => `<option value="${k}" ${f.htype === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <input class="inp" type="date" id="hfrom" value="${esc(f.hfrom)}" style="width:auto" aria-label="Dari tanggal"><input class="inp" type="date" id="hto" value="${esc(f.hto)}" style="width:auto" aria-label="Sampai tanggal">
         ${f.htype || f.hfrom || f.hto || f.hq ? '<button class="btn sm ghost" id="hclr">Reset</button>' : ''}
         <button class="btn sm" id="sxlsx">Excel</button>
@@ -496,7 +502,7 @@
     const kv = (k, v) => v ? `<dt>${esc(k)}</dt><dd>${v}</dd>` : '';
     openDrawer({
       eyebrow: `${it.kat} · ${it.unit}${it.inMaster ? ' · Master' : it.inApp ? ' · ditambah di aplikasi' : ' · dari PR'}`, title: it.name,
-      body: `<div class="stat"><div><b>${esc(fmtN(it.stok))}</b><span>Stok ${esc(it.unit)}</span></div><div><b>${esc(fmtN(it.awal))}</b><span>Stok awal</span></div><div><b>${esc(fmtN(it.inQty))}</b><span>Masuk dari PR</span></div><div><b>${esc(fmtN(it.outQty))}</b><span>Dipakai</span></div><div><b>${esc(fmtN(it.dipinjam))}</b><span>Dipinjam</span></div>${it.adj ? `<div><b>${esc(fmtN(it.adj))}</b><span>Koreksi</span></div>` : ''}</div>
+      body: `<div class="stat"><div><b>${esc(fmtN(it.stok))}</b><span>Stok ${esc(it.unit)}</span></div><div><b>${esc(fmtN(it.awal))}</b><span>Stok awal</span></div><div><b>${esc(fmtN(it.inQty))}</b><span>Masuk dari PR</span></div><div><b>${esc(fmtN(it.outQty))}</b><span>Dipakai</span></div>${it.serahQty || it.kat === 'APD' ? `<div><b>${esc(fmtN(it.serahQty || 0))}</b><span>Diserahkan (APD)</span></div>` : ''}${it.dipinjam || it.kat === 'Alat' ? `<div><b>${esc(fmtN(it.dipinjam))}</b><span>Dipinjam</span></div>` : ''}${it.adj ? `<div><b>${esc(fmtN(it.adj))}</b><span>Koreksi</span></div>` : ''}</div>
         <div><span class="pill ${ST_LABEL[it.status][1]}">${ST_LABEL[it.status][0]}</span> ${katChip(it)}</div>
         <dl class="kv">${kv('Lokasi rak', esc(it.rak))}${kv('Stok minimum', isEmpty(it.min) || it.min === null ? '' : esc(fmtN(it.min)))}${kv('Catatan', esc(it.note))}${kv('Aktivitas terakhir', esc(fmtD(it.last, true)))}</dl>
         ${it.reqs.length ? `<fieldset><legend>Permintaan di PR</legend><div style="overflow-x:auto"><table class="mini"><thead><tr><th>PR</th><th class="n">Diminta</th><th class="n">Datang</th><th class="n">Sisa</th><th>Status</th></tr></thead><tbody>
@@ -504,12 +510,12 @@
         <fieldset><legend>Riwayat barang</legend>${[...it.ins.map(r => ({ type: 'in', date: r.date, qty: r.qty, sub: [r.prNo, r.supplier].filter(Boolean).join(' · ') })), ...txs.map(t => ({ type: t.type, date: t.date, qty: t.qty, sub: [t.person, t.purpose, t.reason].filter(Boolean).join(' · '), v: isVoid(t), id: t.id }))]
           .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 60)
           .map(e => `<div style="display:flex;gap:8px;justify-content:space-between;${e.v ? 'opacity:.5;text-decoration:line-through' : ''}" ${e.id ? `data-tx="${esc(e.id)}"` : ''}><span><span class="pill ${TYPES[e.type][1]}">${TYPES[e.type][0]}</span> <span class="hint">${esc(fmtD(e.date))} ${esc(e.sub)}</span></span><b class="num">${esc(fmtN(e.qty))}</b></div>`).join('') || '<span class="hint">Belum ada.</span>'}</fieldset>`,
-      foot: isAdmin() ? `<button class="btn sm" data-a="edit">Edit barang</button><button class="btn sm" data-a="hide">${it.hidden ? 'Tampilkan' : 'Sembunyikan'}</button><button class="btn sm" data-a="adj">Koreksi stok</button><button class="btn sm" data-a="pinjam">Pinjamkan</button><button class="btn sm primary" data-a="pakai">Catat keluar</button>` : '<button class="btn" data-close="1">Tutup</button>'
+      foot: isAdmin() ? `<button class="btn sm" data-a="edit">Edit barang</button><button class="btn sm" data-a="hide">${it.hidden ? 'Tampilkan' : 'Sembunyikan'}</button><button class="btn sm" data-a="adj">Koreksi stok</button>${({ Alat: '<button class="btn sm" data-a="pakai">Catat pemakaian</button><button class="btn sm primary" data-a="pinjam">Pinjamkan</button>', APD: '<button class="btn sm" data-a="pakai">Catat pemakaian</button><button class="btn sm primary" data-a="serah">Serahkan APD</button>' })[it.kat] || '<button class="btn sm" data-a="pinjam">Pinjamkan</button><button class="btn sm primary" data-a="pakai">Catat keluar</button>'}` : '<button class="btn" data-close="1">Tutup</button>'
     });
     $$('[data-tx]', $('#drawerRoot')).forEach(r => { r.style.cursor = 'pointer'; r.onclick = () => openTx(r.dataset.tx); });
     $$('[data-a]', $('#drawerRoot')).forEach(b => b.onclick = () => {
       const a = b.dataset.a;
-      if (a === 'pakai' || a === 'pinjam') openOut(a, key); else if (a === 'adj') openAdjust(key); else if (a === 'edit') openItemForm(key); else if (a === 'hide') hideItem(it);
+      if (a === 'pakai' || a === 'pinjam' || a === 'serah') openOut(a, key); else if (a === 'adj') openAdjust(key); else if (a === 'edit') openItemForm(key); else if (a === 'hide') hideItem(it);
     });
   }
 
@@ -520,29 +526,41 @@
   const purposes = () => [...new Set(state.stock.tx.map(t => t.purpose).filter(Boolean))].sort();
   const dl = (id, arr) => `<datalist id="${id}">${arr.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
 
+  const OUT_MODE = {
+    pakai: { t: 'Catat pemakaian', h: 'Stok berkurang permanen (barang habis pakai).', p: 'Diterima oleh', u: 'Keperluan / lokasi kerja', ok: 'pemakaian' },
+    pinjam: { t: 'Catat peminjaman alat', h: 'Stok berkurang selama dipinjam dan kembali saat dicatat di tab Alat dipinjam.', p: 'Peminjam', u: 'Keperluan / lokasi kerja', ok: 'pinjam' },
+    serah: { t: 'Serah terima APD', h: 'APD diserahkan ke pekerja dan tidak kembali. Nama penerima tercatat di riwayat.', p: 'Nama pekerja penerima', u: 'Jabatan / area kerja', ok: 'serah APD' }
+  };
+  const MODE_OF_KAT = { Material: 'pakai', Alat: 'pinjam', APD: 'serah' };
   function openOut(mode, presetKey) {
     let lines = [presetKey || ''], qtys = [''];
+    let modeTouched = !!presetKey; // dari tombol di detail barang: mode sudah dipilih
     const form = { date: today(), person: '', purpose: '', note: '' };
     const lineHTML = (k, i) => { const it = k && state.stock.map.get(k); return `<div class="line" data-line="${i}"><div class="f"><label for="li${i}">Barang</label><input class="inp" id="li${i}" list="dlItems" value="${it ? esc(it.name + ' [' + it.unit + ']') : ''}" placeholder="Ketik nama barang…" autocomplete="off"><span class="hint" id="lh${i}">${it ? 'Tersedia ' + esc(fmtN(it.stok)) + ' ' + esc(it.unit) : ''}</span></div>
       <div class="f"><label for="lq${i}">Jumlah</label><input class="inp" id="lq${i}" inputmode="decimal" value="${esc(qtys[i] || '')}"></div><button class="btn sm ghost" type="button" data-rm="${i}" aria-label="Hapus baris" ${lines.length < 2 ? 'disabled' : ''}>✕</button></div>`; };
     const draw = () => {
       openDrawer({
-        eyebrow: 'Admin · Stok', title: mode === 'pinjam' ? 'Catat peminjaman alat' : 'Catat barang keluar',
-        body: `<div class="seg" role="radiogroup"><button type="button" data-mode="pakai" class="${mode === 'pakai' ? 'on' : ''}">Pemakaian</button><button type="button" data-mode="pinjam" class="${mode === 'pinjam' ? 'on' : ''}">Peminjaman</button></div>
-          <span class="hint">${mode === 'pinjam' ? 'Stok berkurang selama dipinjam dan kembali saat dicatat di tab Alat dipinjam.' : 'Stok berkurang permanen (barang habis pakai).'}</span>
+        eyebrow: 'Admin · Stok', title: OUT_MODE[mode].t,
+        body: `<div class="seg" role="radiogroup">${[['pakai', 'Pemakaian'], ['pinjam', 'Peminjaman alat'], ['serah', 'Serah APD']].map(([m, l]) => `<button type="button" data-mode="${m}" class="${mode === m ? 'on' : ''}" role="radio" aria-checked="${mode === m}">${l}</button>`).join('')}</div>
+          <span class="hint">${OUT_MODE[mode].h}</span>${(() => { const mis = lines.map(k => state.stock.map.get(k)).filter(it => it && MODE_OF_KAT[it.kat] !== mode); return mis.length ? `<div class="katbar">Perhatian: ${mis.map(i => esc(i.name) + ' (' + i.kat + ')').join(', ')} biasanya dicatat sebagai <b>${({ pakai: 'Pemakaian', pinjam: 'Peminjaman', serah: 'Serah APD' })[MODE_OF_KAT[mis[0].kat]]}</b>.</div>` : ''; })()}
           <fieldset><legend>Barang</legend>${dl('dlItems', [])}<div id="lines">${lines.map(lineHTML).join('')}</div><button class="btn sm ghost" type="button" id="addLine">+ Tambah barang</button></fieldset>
           <div class="grid2"><div class="f"><label for="oDate">Tanggal</label><input class="inp" type="date" id="oDate" value="${esc(form.date)}"></div>
-            <div class="f"><label for="oPerson">${mode === 'pinjam' ? 'Peminjam' : 'Diterima oleh'}</label><input class="inp" id="oPerson" list="dlPeople" autocomplete="off" value="${esc(form.person)}">${dl('dlPeople', people())}</div>
-            <div class="f wide"><label for="oPurpose">Keperluan / lokasi kerja</label><input class="inp" id="oPurpose" list="dlPurp" autocomplete="off" value="${esc(form.purpose)}">${dl('dlPurp', purposes())}</div>
+            <div class="f"><label for="oPerson">${OUT_MODE[mode].p}</label><input class="inp" id="oPerson" list="dlPeople" autocomplete="off" value="${esc(form.person)}">${dl('dlPeople', people())}</div>
+            <div class="f wide"><label for="oPurpose">${OUT_MODE[mode].u}</label><input class="inp" id="oPurpose" list="dlPurp" autocomplete="off" value="${esc(form.purpose)}">${dl('dlPurp', purposes())}</div>
             <div class="f wide"><label for="oNote">Catatan</label><input class="inp" id="oNote" value="${esc(form.note)}"></div></div>
           <div id="oErr"></div>`,
         foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="oSave">Simpan</button>'
       });
       $('#dlItems').innerHTML = itemOptions();
-      $$('[data-mode]').forEach(b => b.onclick = () => { snap(); mode = b.dataset.mode; draw(); });
+      $$('[data-mode]').forEach(b => b.onclick = () => { snap(); mode = b.dataset.mode; modeTouched = true; draw(); });
       $('#addLine').onclick = () => { snap(); lines.push(''); qtys.push(''); draw(); };
       $$('[data-rm]').forEach(b => b.onclick = () => { snap(); lines.splice(+b.dataset.rm, 1); qtys.splice(+b.dataset.rm, 1); draw(); });
-      lines.forEach((_, i) => { $('#li' + i).onchange = e => { const k = keyFromLabel(e.target.value); const it = state.stock.map.get(k); $('#lh' + i).textContent = it ? `Tersedia ${fmtN(it.stok)} ${it.unit}` : 'Pilih dari daftar'; }; });
+      lines.forEach((_, i) => { $('#li' + i).onchange = e => {
+        const k = keyFromLabel(e.target.value); const it = state.stock.map.get(k);
+        $('#lh' + i).textContent = it ? `Tersedia ${fmtN(it.stok)} ${it.unit} · ${it.kat}` : 'Pilih dari daftar';
+        if (it && i === 0 && !modeTouched && MODE_OF_KAT[it.kat] !== mode) { snap(); mode = MODE_OF_KAT[it.kat]; draw(); } // mode mengikuti kategori barang pertama
+        else if (it) { snap(); draw(); }
+      }; });
       $('#oSave').onclick = save;
     };
     const snap = () => {
@@ -557,7 +575,7 @@
         if (!lines[i]) { showErr('oErr', `Baris ${i + 1}: pilih barang dari daftar.`); return; }
         payload.push(Object.assign({ key: lines[i], qty: qtys[i] }, common));
       }
-      await submit('oSave', 'oErr', () => apiPost('saveTx', { lines: payload }), `${payload.length} catatan ${mode === 'pinjam' ? 'pinjam' : 'keluar'} tersimpan`);
+      await submit('oSave', 'oErr', () => apiPost('saveTx', { lines: payload }), `${payload.length} catatan ${OUT_MODE[mode].ok} tersimpan`);
     }
     draw();
   }
@@ -624,7 +642,7 @@
           <div class="f"><label for="eQty">Jumlah${t.type === 'koreksi' ? ' (+/−)' : ''}</label><input class="inp" id="eQty" inputmode="decimal" value="${esc(t.qty)}"></div>
           <div class="f"><label for="eDate">Tanggal</label><input class="inp" type="date" id="eDate" value="${esc(t.date)}"></div>
           ${t.type !== 'koreksi' ? `<div class="f"><label for="ePerson">Orang</label><input class="inp" id="ePerson" value="${esc(t.person)}"></div>` : ''}
-          ${t.type === 'pakai' || t.type === 'pinjam' ? `<div class="f"><label for="ePurpose">Keperluan</label><input class="inp" id="ePurpose" value="${esc(t.purpose)}"></div>` : ''}
+          ${t.type === 'pakai' || t.type === 'pinjam' || t.type === 'serah' ? `<div class="f"><label for="ePurpose">Keperluan</label><input class="inp" id="ePurpose" value="${esc(t.purpose)}"></div>` : ''}
           ${t.type === 'kembali' ? `<div class="f"><label for="eCond">Kondisi</label><input class="inp" id="eCond" value="${esc(t.cond)}"></div>` : ''}
           ${t.type === 'koreksi' ? `<div class="f wide"><label for="eReason">Alasan koreksi</label><input class="inp" id="eReason" value="${esc(t.reason)}"></div>` : ''}
           <div class="f wide"><label for="eNote">Catatan</label><input class="inp" id="eNote" value="${esc(t.note)}"></div>
@@ -647,7 +665,7 @@
       body: `<div class="grid2">
           ${it ? `<div class="f wide"><span class="lbl">Nama & satuan</span><span>${esc(it.name)} · ${esc(it.unit)}</span><span class="hint">Nama dan satuan terhubung ke data PR/Master, jadi tidak diubah di sini.</span></div>`
           : '<div class="f wide"><label for="iName">Nama barang</label><input class="inp" id="iName"></div><div class="f"><label for="iUnit">Satuan</label><input class="inp" id="iUnit" placeholder="pcs, unit, meter…"></div>'}
-          <div class="f"><span class="lbl">Kategori</span><div class="seg" id="iKat"><button type="button" data-k="Material" class="${!it || it.kat === 'Material' ? 'on' : ''}">Material</button><button type="button" data-k="Alat" class="${it && it.kat === 'Alat' ? 'on' : ''}">Alat</button></div></div>
+          <div class="f wide"><span class="lbl">Kategori</span><div class="seg" id="iKat">${KATS.map(k => `<button type="button" data-k="${k}" class="${(it ? it.kat : 'Material') === k ? 'on' : ''}">${k}</button>`).join('')}</div><span class="hint">Material: dipakai habis · Alat: dipinjam & dikembalikan · APD: diserahkan ke pekerja</span></div>
           <div class="f"><label for="iAwal">Stok awal</label><input class="inp" id="iAwal" inputmode="decimal" value="${it ? esc(it.awal) : '0'}"></div>
           <div class="f"><label for="iMin">Stok minimum</label><input class="inp" id="iMin" inputmode="decimal" value="${it && it.min !== null ? esc(it.min) : ''}" placeholder="kosong = tanpa batas"></div>
           <div class="f"><label for="iRak">Lokasi rak</label><input class="inp" id="iRak" value="${it ? esc(it.rak) : ''}"></div>
@@ -658,6 +676,12 @@
     let kat = it ? it.kat : 'Material';
     $$('#iKat button').forEach(b => b.onclick = () => { kat = b.dataset.k; $$('#iKat button').forEach(x => x.classList.toggle('on', x === b)); });
     $('#iSave').onclick = () => submit('iSave', 'iErr', () => apiPost('saveItem', { key: key || '', name: val('iName'), unit: val('iUnit'), kat, awal: val('iAwal'), min: val('iMin'), rak: val('iRak'), note: val('iNote') }), it ? 'Data barang tersimpan' : 'Barang ditambahkan');
+  }
+  async function setKat(keys, kat) {
+    const prev = keys.map(k => { const it = state.stock.map.get(k); return it && [it, it.kat, it.katSrc]; }).filter(Boolean);
+    prev.forEach(([it]) => { it.kat = kat; it.katSrc = 'app'; }); render();
+    try { await apiPost('setKat', { keys, kat }); toast(keys.length > 1 ? `${keys.length} barang → ${kat}` : `Kategori → ${kat}`); }
+    catch (e) { prev.forEach(([it, k, src]) => { it.kat = k; it.katSrc = src; }); render(); toast(e.message || 'Gagal menyimpan kategori', true); }
   }
   async function hideItem(it) {
     try { await apiPost('hideItem', { key: it.key, hidden: !it.hidden }); afterWrite(it.hidden ? 'Barang ditampilkan lagi' : 'Barang disembunyikan'); }
@@ -674,8 +698,8 @@
   async function exportStock() {
     try {
       const X = await xlsxLib(), s = state.stock, wb = X.utils.book_new();
-      const s1 = [['Nama Barang', 'Satuan', 'Kategori', 'Rak', 'Stok Awal', 'Masuk PR', 'Dipakai', 'Dipinjam', 'Koreksi', 'Stok', 'Minimum', 'Status', 'Sisa PR', 'Catatan']]
-        .concat(s.items.filter(i => !i.hidden).sort((a, b) => a.name.localeCompare(b.name, 'id')).map(i => [i.name, i.unit, i.kat, i.rak, i.awal, i.inQty, i.outQty, i.dipinjam, i.adj, i.stok, i.min, ST_LABEL[i.status][0], i.sisaPR, i.note]));
+      const s1 = [['Nama Barang', 'Satuan', 'Kategori', 'Rak', 'Stok Awal', 'Masuk PR', 'Dipakai', 'Diserahkan (APD)', 'Dipinjam', 'Koreksi', 'Stok', 'Minimum', 'Status', 'Sisa PR', 'Catatan']]
+        .concat(s.items.filter(i => !i.hidden).sort((a, b) => a.name.localeCompare(b.name, 'id')).map(i => [i.name, i.unit, i.kat, i.rak, i.awal, i.inQty, i.outQty, i.serahQty || 0, i.dipinjam, i.adj, i.stok, i.min, ST_LABEL[i.status][0], i.sisaPR, i.note]));
       const s2 = [['Tanggal', 'Jenis', 'Barang', 'Qty', 'Satuan', 'Orang', 'Keperluan / PR', 'Catatan', 'Batal', 'Dicatat oleh']]
         .concat(ledger().map(e => [e.date, TYPES[e.type][0], e.name, +e.qty, e.unit, e.person || e.supplier || '', e.purpose || e.prNo || '', e.note || e.reason || '', e.kind === 'tx' && isVoid(e) ? 'Ya: ' + e.voidReason : '', e.createdBy || '']));
       const s3 = [['Sejak', 'Barang', 'Sisa', 'Satuan', 'Peminjam', 'Keperluan', 'Hari']].concat(s.loans.map(l => [l.date, l.name, l.sisa, l.unit, l.person, l.purpose, daysSince(l.date)]));
@@ -785,7 +809,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.3.0';
+    $('#ver').textContent = 'v1.4.0';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }

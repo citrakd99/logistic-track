@@ -126,7 +126,7 @@ function actSaveItem_(me, b) {
       key = String(b.key); if (!M[key]) fail_('invalid', 'Barang tidak ditemukan.');
       name = M[key].name; unit = M[key].unit;
     }
-    var kat = b.kat === 'Alat' || b.kat === 'Material' ? b.kat : '';
+    var kat = isKat_(b.kat) ? b.kat : '';
     var awal = pNum_(b.awal), min = pNum_(b.min);
     if (awal !== null && awal < 0) fail_('invalid', 'Stok awal tidak boleh minus.');
     if (min !== null && min < 0) fail_('invalid', 'Stok minimum tidak boleh minus.');
@@ -159,3 +159,25 @@ function actHideItem_(me, b) {
 }
 
 function uniq_(a) { var o = {}; a.forEach(function (x) { o[x] = 1; }); return Object.keys(o); }
+
+/** Koreksi kategori cepat (1..n barang sekaligus). Hanya mengubah kolom kategori; data lain barang tetap. */
+function actSetKat_(me, b) {
+  var keys = Array.isArray(b.keys) ? b.keys : [];
+  if (!isKat_(b.kat)) fail_('invalid', 'Kategori harus Material, Alat, atau APD.');
+  if (!keys.length || keys.length > 500) fail_('invalid', 'Pilih 1–500 barang.');
+  return withLock_(function () {
+    var ss = db_(), ctx = stockContext_(ss, false);
+    var M = buildStock_(ctx.master.rows, ctx.items, ctx.feed, ctx.tx), byKey = {}, add = [], n = 0;
+    ctx.items.forEach(function (o) { byKey[o.key] = o; });
+    keys.forEach(function (k) {
+      var it = M[k]; if (!it) return;
+      var ex = byKey[k];
+      if (ex) { var r = stripRow_(ex); r.kat = b.kat; r.updatedAt = Date.now(); r.updatedBy = me.email; updateRow_(ss, 'ITEMS', ex._row, r); }
+      else add.push({ key: k, name: it.name, unit: it.unit, kat: b.kat, hidden: false, full: false, source: 'override', updatedAt: Date.now(), updatedBy: me.email });
+      n++;
+    });
+    appendRows_(ss, 'ITEMS', add);
+    log_(me.email, 'setKat', b.kat + ' × ' + n);
+    return { updated: n };
+  });
+}

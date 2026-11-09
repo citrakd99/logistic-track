@@ -1,7 +1,7 @@
 /* LoGistic Tracking — service worker.
  * File aplikasi: network-first (versi terbaru selalu dipakai saat online), cadangan dari cache saat offline.
  * Data API (script.google.com) TIDAK di-cache di sini; app menyimpan salinan data terakhir sendiri. */
-const VERSION = 'lt-v1.3.0';
+const VERSION = 'lt-v1.4.0';
 const SHELL = ['./', './index.html', './assets/style.css', './assets/app.js', './assets/config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-192.png', './icons/favicon-32.png'];
 

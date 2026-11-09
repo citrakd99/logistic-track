@@ -155,6 +155,15 @@ legend{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--
 .sr.hid{opacity:.55}
 .kat{font-size:11.5px;font-weight:600;border-radius:4px;padding:0 6px;background:var(--panel-2);border:1px solid var(--line)}
 .kat.alat{color:var(--loan);border-color:var(--loan-b)}
+.kat.apd{color:var(--in);border-color:var(--in-b)}
+.p-serah{--c:var(--in);--cbg:var(--in-bg)}
+.katseg{display:inline-flex;border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
+.katseg button{all:unset;cursor:pointer;padding:3px 9px;font-size:12px;font-weight:600;color:var(--ink-3);border-right:1px solid var(--line)}
+.katseg button:last-child{border-right:0}
+.katseg button.on{background:var(--accent);color:var(--accent-ink)}
+.katseg button.guess{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.katseg button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.katbar{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:8px 10px;font-size:13px}
 .p-ok{--c:var(--ok);--cbg:var(--ok-bg)} .p-low{--c:var(--low);--cbg:var(--low-bg)} .p-out{--c:var(--out);--cbg:var(--out-bg)}
 .p-in{--c:var(--in);--cbg:var(--in-bg)} .p-pakai{--c:var(--low);--cbg:var(--low-bg)} .p-pinjam{--c:var(--loan);--cbg:var(--loan-bg)} .p-kembali{--c:var(--ok);--cbg:var(--ok-bg)} .p-koreksi{--c:var(--mut);--cbg:var(--mut-bg)}
 .day{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:8px 14px;background:var(--panel-2);border-bottom:1px solid var(--line)}
