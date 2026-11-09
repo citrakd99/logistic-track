@@ -7,6 +7,12 @@ LoGistic Tracking adalah satu web app untuk memantau **Tracking PR** (permintaan
 | **Viewer** | Tidak perlu | Melihat Tracking PR, stok, riwayat keluar-masuk, alat dipinjam, dan export Excel/PDF |
 | **Admin** | Email + password | Semua yang bisa dilakukan Viewer, ditambah: catat keluar/pinjam/kembali/koreksi, edit/batalkan transaksi, tambah/ubah barang, atur sumber data dan admin |
 
+## Aplikasi (PWA)
+- **Pasang di HP**: buka situs di Chrome, lalu pilih **Pasang aplikasi** (tombol di menu) atau menu ⋮ → *Tambahkan ke layar utama*. Di iPhone (Safari): Bagikan → *Tambahkan ke Layar Utama*.
+- **Pasang di laptop**: Chrome/Edge → ikon pasang di bilah alamat, atau tombol **Pasang aplikasi** di menu samping.
+- **Offline**: data PR & stok yang terakhir dibuka tetap bisa dilihat tanpa internet, dengan label *Offline · data tersimpan*. Simpanan admin dinonaktifkan saat offline.
+- **Laptop (≥1024 px)**: menu samping lebar dengan sub-menu Stok, dan konten memakai lebar penuh layar.
+
 ## Arsitektur
 
 ```
@@ -25,6 +31,7 @@ GitHub Pages (index.html + assets/)  ──fetch──►  Apps Script (terpasan
 
 ```
 index.html, assets/        Frontend (tanpa build step)
+manifest.webmanifest, sw.js, icons/   PWA: manifest, service worker, ikon
 assets/config.js           API_URL (URL Web App Apps Script)
 gas/                       Backend Apps Script — salin semua file ini ke proyek Apps Script
   Code.gs                  Router doGet/doPost, Pengaturan, setup()

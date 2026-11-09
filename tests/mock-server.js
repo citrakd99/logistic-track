@@ -14,7 +14,7 @@ g.setup();
 const a = g.post({ action: 'setupAdmin', setupKey: env.__props.SETUP_KEY, name: 'Admin Demo', email: 'admin@demo.id', password: 'demo12345' });
 g.post({ action: 'setSources', token: a.data.token, prUrl: 'DEMOPRSHEET00000000000000000000000000000001' });
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   if (u.pathname === '/api') {
