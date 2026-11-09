@@ -95,8 +95,8 @@
     if (state.route === 'stok') state.sub = ['stok', 'riwayat', 'dipinjam'].includes(h[1]) ? h[1] : 'stok';
     if (state.route === 'pengaturan' && !isAdmin()) { location.hash = '#pr'; return; }
     $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === state.route));
-    if (state.route === 'pr' && !state.pr && !state.loading.pr) loadPR();
-    if (state.route === 'stok' && !state.stock && !state.loading.stock) loadStock();
+    if (API() && state.route === 'pr' && !state.pr && !state.loading.pr) loadPR();
+    if (API() && state.route === 'stok' && !state.stock && !state.loading.stock) loadStock();
     render();
   }
   window.addEventListener('hashchange', route);
@@ -104,6 +104,7 @@
   // ---------- header ----------
   function renderWho() {
     $('#navSet').hidden = !isAdmin();
+    if (!API()) { $('#who').innerHTML = '<span class="dim">Mode sementara</span>'; return; }
     $('#who').innerHTML = isAdmin()
       ? `<span class="badge">Admin</span><span>${esc(state.auth.name || state.auth.email)}</span><button class="btn sm ghost" id="btnLogout">Keluar</button>`
       : `<span class="dim">Mode lihat</span><button class="btn sm" id="btnLogin">Login admin</button>`;
@@ -112,7 +113,7 @@
   }
   function renderSrc() {
     const el = $('#srcbar'); const busy = state.loading.pr || state.loading.stock;
-    if (state.route === 'pengaturan') { el.className = 'srcbar'; el.innerHTML = ''; return; }
+    if (state.route === 'pengaturan' || !API()) { el.className = 'srcbar'; el.innerHTML = ''; return; }
     let cls = busy ? 'busy' : '', parts = [];
     const src = state.route === 'stok' ? state.stock && state.stock.sources : state.pr && { pr: state.pr.source };
     const err = state.route === 'stok' ? state.stockErr : state.route === 'pr' ? state.prErr : null;
@@ -139,10 +140,17 @@
       ${nc && isAdmin() ? '<p><a class="btn primary" href="#pengaturan">Buka Pengaturan</a></p>' : nc ? '<p class="hint">Hubungi admin untuk mengatur link Google Sheet.</p>' : `<p><button class="btn" id="${retry}">Coba lagi</button></p>`}</div>`;
   }
   function renderNoApi(v) {
-    v.innerHTML = `<div class="card" style="max-width:560px"><h2>Hubungkan ke server</h2>
-      <p class="hint">URL API belum diisi di <span class="mono">assets/config.js</span>. Tempel URL Web App Apps Script (berakhiran <span class="mono">/exec</span>) untuk mencoba di browser ini.</p>
-      <div class="f"><label for="apiUrl">URL Web App</label><input class="inp" id="apiUrl" placeholder="https://script.google.com/macros/s/…/exec"></div>
-      <div><button class="btn primary" id="apiSave">Simpan & muat</button></div></div>`;
+    const L = (window.LT_CONFIG && window.LT_CONFIG.LEGACY) || {};
+    const which = state.route === 'stok' ? 'stok' : 'pr', label = which === 'stok' ? 'Stok Gudang' : 'Tracking PR';
+    const ok = /^https:\/\/claude\.ai\//.test(L[which] || '');
+    v.innerHTML = `<div class="card" style="max-width:620px">
+      <span class="eyebrow">Mode sementara</span><h2>${esc(label)}</h2>
+      <p class="hint">Server aplikasi belum tersambung. Selama masa transisi, data ${esc(label)} dibuka di aplikasi versi sebelumnya (claude.ai) yang sudah berjalan dan membaca Google Sheet yang sama.</p>
+      ${ok ? `<div><a class="btn primary" href="${esc(L[which])}" target="_blank" rel="noopener">Buka ${esc(label)} ↗</a></div>` : '<div class="err-box">Link aplikasi sementara belum diatur di assets/config.js.</div>'}
+      <details><summary class="hint" style="cursor:pointer">Admin: hubungkan server (Apps Script)</summary>
+        <p class="hint">Isi <span class="mono">API_URL</span> di <span class="mono">assets/config.js</span> agar berlaku untuk semua orang, atau tempel di sini untuk mencoba di browser ini saja.</p>
+        <div class="f"><label for="apiUrl">URL Web App</label><input class="inp" id="apiUrl" placeholder="https://script.google.com/macros/s/…/exec"></div>
+        <div style="margin-top:8px"><button class="btn" id="apiSave">Simpan & muat</button></div></details></div>`;
     $('#apiSave').onclick = () => { const u = val('apiUrl'); if (!/^https:\/\/script\.google(usercontent)?\.com\/.+/.test(u)) { toast('URL harus dari script.google.com', true); return; } store('lt_api', u); boot(); };
   }
 
@@ -715,10 +723,10 @@
   // ---------- start ----------
   async function boot() {
     $('#ver').textContent = 'v1.0.0';
-    if (!API()) { render(); return; }
     route();
+    if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }
   }
-  setInterval(() => { if (!document.hidden && !$('#drawerRoot').innerHTML) reloadCurrent(false); }, 5 * 60 * 1000);
+  setInterval(() => { if (API() && !document.hidden && !$('#drawerRoot').innerHTML) reloadCurrent(false); }, 5 * 60 * 1000);
   boot();
 })();

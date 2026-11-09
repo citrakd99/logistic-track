@@ -38,6 +38,9 @@ tests/                     Unit test, test integrasi (emulator Apps Script), ser
 .github/workflows/         CI: jalankan test → deploy ke GitHub Pages
 ```
 
+## Mode sementara
+Selama `API_URL` di `assets/config.js` masih kosong, menu **Tracking PR** dan **Stok Gudang** menampilkan tombol untuk membuka aplikasi versi sebelumnya di claude.ai (link ada di `LT_CONFIG.LEGACY`). Aplikasi versi sebelumnya membaca Google Sheet yang sama. Begitu `API_URL` diisi, aplikasi otomatis beralih ke mode penuh.
+
 ## Pemasangan (sekali saja, ±15 menit)
 
 ### 1. Backend: Google Apps Script
