@@ -48,14 +48,23 @@
 
   // ---------- API ----------
   async function apiGet(action, fresh) {
+    if ((action === 'pr' || action === 'stock') && !navigator.onLine) return offlineData(action);
     const url = API() + '?action=' + encodeURIComponent(action) + (fresh ? '&fresh=1' : '') + '&_=' + Date.now();
     let j;
     try { const r = await fetch(url, { redirect: 'follow' }); j = await r.json(); }
-    catch (e) { throw { code: 'network', message: 'Tidak bisa menghubungi server. Periksa koneksi internet atau URL API.' }; }
+    catch (e) { if (action === 'pr' || action === 'stock') return offlineData(action); throw { code: 'network', message: 'Tidak bisa menghubungi server. Periksa koneksi internet atau URL API.' }; }
     if (!j.ok) throw j;
+    if (action === 'pr' || action === 'stock') { j.data.offlineAt = null; try { localStorage.setItem('lt_last_' + action, JSON.stringify({ at: Date.now(), data: j.data })); } catch (e) { /* penyimpanan penuh: abaikan */ } }
     return j.data;
   }
+  /** Data terakhir yang tersimpan di perangkat, dipakai saat offline. */
+  function offlineData(action) {
+    const c = load('lt_last_' + action, null);
+    if (!c) throw { code: 'network', message: 'Sedang offline dan belum ada data tersimpan di perangkat ini. Buka sekali saat online.' };
+    c.data.offlineAt = c.at; return c.data;
+  }
   async function apiPost(action, body) {
+    if (!navigator.onLine) throw { code: 'network', message: 'Sedang offline. Simpan perubahan saat koneksi tersedia.' };
     let j;
     try {
       const r = await fetch(API(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ action, token: state.auth && state.auth.token }, body || {})) });
@@ -94,7 +103,8 @@
     state.route = ['pr', 'stok', 'pengaturan'].includes(h[0]) ? h[0] : 'pr';
     if (state.route === 'stok') state.sub = ['stok', 'riwayat', 'dipinjam'].includes(h[1]) ? h[1] : 'stok';
     if (state.route === 'pengaturan' && !isAdmin()) { location.hash = '#pr'; return; }
-    $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === state.route));
+    $$('#nav a[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === state.route));
+    $$('#nav a[data-sub]').forEach(a => a.classList.toggle('on', state.route === 'stok' && a.dataset.sub === state.sub));
     if (API() && state.route === 'pr' && !state.pr && !state.loading.pr) loadPR();
     if (API() && state.route === 'stok' && !state.stock && !state.loading.stock) loadStock();
     render();
@@ -120,6 +130,8 @@
     if (err) cls = 'err';
     if (src && src.pr) parts.push(`<span><span class="sdot"></span><b>Tracking PR</b>: diubah ${esc(fmtDT(src.pr.updated))}</span>`);
     if (src && src.master) parts.push(`<span><b>Master Stok</b>: diubah ${esc(fmtDT(src.master.updated))}</span>`);
+    const cur = state.route === 'stok' ? state.stock : state.pr;
+    if (cur && cur.offlineAt) parts.unshift(`<span class="offline">Offline · menampilkan data tersimpan ${esc(fmtDT(cur.offlineAt))}</span>`);
     if (busy) parts.push('<span>Memuat data…</span>');
     if (state.route !== 'pengaturan') parts.push(`<button class="btn sm ghost" id="btnReload" ${busy ? 'disabled' : ''}>↻ Muat ulang</button>`);
     el.className = 'srcbar ' + cls; el.innerHTML = parts.join('');
@@ -336,7 +348,7 @@
     const outSisa = all.filter(i => i.status === 'out' && i.sisaPR > 0).length;
     const k = (cls, key, n, lbl, w) => `<button class="kpi ${cls} ${state.sub === 'stok' && f.filter === key ? 'on' : ''}" data-kpi="${key}"><span class="lbl">${lbl}</span><span class="n">${n}</span><span class="w">${w}</span></button>`;
     v.innerHTML = `<div class="kpis">${k('k-ok', 'ok', c.ok, 'Barang tersedia', `dari ${all.length} jenis`)}${k('k-low', 'low', c.low, 'Stok menipis', 'di bawah minimum')}${k('k-out', 'out', c.out, 'Stok habis', outSisa ? outSisa + ' masih ada sisa PR' : 'cek PR baru')}${k('k-loan', 'loan', c.loan, 'Alat dipinjam', late ? late + ' lewat ' + LOAN_LATE_DAYS + ' hari' : 'belum kembali')}${k('k-in', 'today', c.today, 'Keluar hari ini', 'pakai + pinjam')}</div>
-      <div class="tabs" role="tablist">${[['stok', 'Stok'], ['riwayat', 'Riwayat keluar-masuk'], ['dipinjam', 'Alat dipinjam']].map(([id, l]) => `<a class="tab ${state.sub === id ? 'on' : ''}" href="#stok/${id}" role="tab" aria-selected="${state.sub === id}">${l}${id === 'dipinjam' ? ` <span class="cnt">${s.loans.length}</span>` : ''}</a>`).join('')}</div>
+      <div class="tabs stok-tabs" role="tablist">${[['stok', 'Stok'], ['riwayat', 'Riwayat keluar-masuk'], ['dipinjam', 'Alat dipinjam']].map(([id, l]) => `<a class="tab ${state.sub === id ? 'on' : ''}" href="#stok/${id}" role="tab" aria-selected="${state.sub === id}">${l}${id === 'dipinjam' ? ` <span class="cnt">${s.loans.length}</span>` : ''}</a>`).join('')}</div>
       <div id="sub"></div>`;
     $$('[data-kpi]', v).forEach(b => b.onclick = () => {
       const key = b.dataset.kpi;
@@ -728,11 +740,22 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.0.0';
+    $('#ver').textContent = 'v1.2.0';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }
   }
+  // ---------- PWA ----------
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* tanpa SW app tetap jalan */ });
+  }
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#btnInstall').hidden = false; });
+  window.addEventListener('appinstalled', () => { installEvt = null; $('#btnInstall').hidden = true; toast('Aplikasi terpasang'); });
+  $('#btnInstall').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#btnInstall').hidden = true; };
+  window.addEventListener('online', () => { toast('Kembali online'); reloadCurrent(true); });
+  window.addEventListener('offline', () => { toast('Offline: menampilkan data tersimpan', true); renderSrc(); });
+
   setInterval(() => { if (API() && !document.hidden && !$('#drawerRoot').innerHTML) reloadCurrent(false); }, 5 * 60 * 1000);
   boot();
 })();

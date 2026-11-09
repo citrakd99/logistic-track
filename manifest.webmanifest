@@ -1,0 +1,26 @@
+{
+  "name": "LoGistic Tracking",
+  "short_name": "LoGistic",
+  "description": "Tracking PR material dan stok gudang site",
+  "id": "./",
+  "start_url": "./#pr",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "lang": "id",
+  "background_color": "#EEF0EC",
+  "theme_color": "#C2560F",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Tracking PR", "url": "./#pr", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Stok Gudang", "url": "./#stok", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Alat dipinjam", "url": "./#stok/dipinjam", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
