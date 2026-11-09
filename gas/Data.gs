@@ -20,7 +20,9 @@ function cfg_() {
   var p = props_(), b = boundSs_(), bid = b ? b.getId() : '';
   return { prId: p.getProperty('PR_ID') || '', masterId: p.getProperty('MASTER_ID') || bid, dbId: p.getProperty('DB_ID') || bid, bound: !!b };
 }
-function todayISO_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'); }
+/** Zona waktu aman: file yang dibuka dengan akses Pelihat bisa mengembalikan zona kosong. */
+function tz_(t) { t = typeof t === 'string' ? t.trim() : ''; if (t) return t; try { t = Session.getScriptTimeZone(); } catch (e) { t = ''; } return (typeof t === 'string' && t) ? t : 'Asia/Jakarta'; }
+function todayISO_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd'); }
 
 function idFromUrl_(u) {
   u = String(u || '').trim();
@@ -68,7 +70,7 @@ function readValues_(info, preferTab) {
     ssId = tmpId = tmp.id;
   }
   try {
-    var ss = SpreadsheetApp.openById(ssId), tz = ss.getSpreadsheetTimeZone();
+    var ss = SpreadsheetApp.openById(ssId), tz; try { tz = tz_(ss.getSpreadsheetTimeZone()); } catch (e) { tz = tz_(); }
     var sheets = ss.getSheets();
     var sh = sheets.filter(function (s) { return s.getName().trim().toUpperCase() === preferTab; })[0] || sheets[0];
     return sh.getDataRange().getValues().map(function (r) {
@@ -117,7 +119,7 @@ function syncPRCopy_(info) {
   try {
     var ss = SpreadsheetApp.openById(cfg_().dbId), sh = ss.getSheetByName(PR_COPY_TAB) || ss.insertSheet(PR_COPY_TAB);
     var width = Math.max(21, all.reduce(function (m, r) { return Math.max(m, r.length); }, 0));
-    var rows = [['SALINAN OTOMATIS dari "' + info.name + '" — jangan diedit, akan ditimpa', info.url, 'Disalin: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')]
+    var rows = [['SALINAN OTOMATIS dari "' + info.name + '" — jangan diedit, akan ditimpa', info.url, 'Disalin: ' + Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm')]
       .concat(Array(width - 3).fill(''))].concat(all.map(function (r) {
         var o = []; for (var i = 0; i < width; i++) o.push(r[i] === undefined || r[i] === null ? '' : String(r[i])); return o;
       }));
@@ -182,7 +184,7 @@ function readTable_(ss, name) {
   var head = sh.getRange(1, 1, 1, lc).getValues()[0], vals = sh.getRange(2, 1, lr - 1, lc).getValues();
   return vals.map(function (r, i) {
     var o = { _row: i + 2 };
-    head.forEach(function (h, j) { var v = r[j]; o[h] = isDate_(v) ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd') : v; });
+    head.forEach(function (h, j) { var v = r[j]; o[h] = isDate_(v) ? Utilities.formatDate(v, tz_(), 'yyyy-MM-dd') : v; });
     return o;
   }).filter(function (o) { return o[head[0]] !== '' && o[head[0]] !== null; });
 }

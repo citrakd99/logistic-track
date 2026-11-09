@@ -27,9 +27,9 @@ class Sheet {
   }
 }
 class Spreadsheet {
-  constructor(id, name, sheets) { this.id = id; this.name = name; this.sheets = sheets || [new Sheet('Sheet1')]; }
+  constructor(id, name, sheets, tz) { this.id = id; this.name = name; this.sheets = sheets || [new Sheet('Sheet1')]; this.tz = tz === undefined ? 'Asia/Jakarta' : tz; }
   getId() { return this.id; } getName() { return this.name; } getUrl() { return 'https://docs.google.com/spreadsheets/d/' + this.id + '/edit'; }
-  getSpreadsheetTimeZone() { return 'Asia/Jakarta'; }
+  getSpreadsheetTimeZone() { return this.tz; }
   getSheets() { return this.sheets; }
   getSheetByName(n) { return this.sheets.find(s => s.name === n) || null; }
   insertSheet(n) { const s = new Sheet(n); this.sheets.push(s); return s; }
@@ -62,7 +62,11 @@ function createEnv(opts = {}) {
       base64EncodeWebSafe: b => toBuf(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
       base64DecodeWebSafe: s => toSigned(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')),
       newBlob: x => ({ getBytes: () => toSigned(toBuf(x)), getDataAsString: () => toBuf(x).toString('utf8') }),
-      formatDate: (d, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+      formatDate: (d, tz, fmt) => {
+        if (typeof tz !== 'string' || !tz) throw new Error('Argumen tak valid: timeZone. Seharusnya bertipe: String');
+        const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d).map(x => [x.type, x.value]));
+        return String(fmt).replace('yyyy', p.year).replace('MM', p.month).replace('dd', p.day).replace('HH', p.hour).replace('mm', p.minute);
+      }
     },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ content: s, setMimeType() { return this; } }) },
     DriveApp: {
@@ -88,7 +92,7 @@ function createEnv(opts = {}) {
   };
   // helper untuk test
   env.__files = files; env.__props = props; env.__cache = cache;
-  env.__addSheetFile = (id, name, tab, rows) => { files[id] = { name, mime: env.MimeType.GOOGLE_SHEETS, updated: Date.now(), ss: new Spreadsheet(id, name, [new Sheet(tab, rows)]) }; };
+  env.__addSheetFile = (id, name, tab, rows, tz) => { files[id] = { name, mime: env.MimeType.GOOGLE_SHEETS, updated: Date.now(), ss: new Spreadsheet(id, name, [new Sheet(tab, rows)], tz) }; };
   env.__addXlsxFile = (id, name, rows) => { files[id] = { name, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', updated: Date.now(), rows }; };
 
   const ctx = vm.createContext(Object.assign({}, env));

@@ -130,3 +130,50 @@ function actChangePassword_(me, b) {
   var a = findAdmin_(me.email);
   return { token: issueToken_(a), email: a.email, name: a.name, exp: Date.now() + TOKEN_TTL_MS };
 }
+
+// ---------- PIN viewer ----------
+// Jika PIN aktif, data hanya bisa dibaca dengan token viewer (didapat setelah memasukkan PIN) atau token admin.
+var VIEWER_TTL_MS = 30 * 24 * 3600 * 1000;
+var PIN_MAX_FAIL = 20;
+
+function pinCfg_() { try { return JSON.parse(props_().getProperty('VIEWER_PIN') || 'null'); } catch (e) { return null; } }
+function pinOn_() { var c = pinCfg_(); return !!(c && c.hash); }
+
+function issueViewerToken_(c) {
+  var payload = b64u_(JSON.stringify({ t: 'v', v: c.ver, x: Date.now() + VIEWER_TTL_MS }));
+  return payload + '.' + b64u_(Utilities.computeHmacSha256Signature(payload, secret_()));
+}
+/** true jika token boleh membaca data: PIN mati, token admin sah, atau token viewer sah untuk versi PIN saat ini. */
+function canView_(token) {
+  if (!pinOn_()) return true;
+  var parts = String(token || '').split('.');
+  if (parts.length !== 2) return false;
+  if (!safeEq_(b64u_(Utilities.computeHmacSha256Signature(parts[0], secret_())), parts[1])) return false;
+  var p; try { p = JSON.parse(fromB64u_(parts[0])); } catch (e) { return false; }
+  if (!p.x || p.x < Date.now()) return false;
+  if (p.t === 'v') return p.v === pinCfg_().ver;
+  var a = findAdmin_(p.e);
+  return !!(a && (a.ver || 1) === p.v);
+}
+function requireView_(token) { if (!canView_(token)) fail_('pin_required', 'Masukkan PIN untuk melihat data.'); }
+
+function actViewerLogin_(b) {
+  var c = pinCfg_();
+  if (!c || !c.hash) return { token: '', exp: 0, pin: false };
+  var cache = CacheService.getScriptCache(), n = +(cache.get('pinfail') || 0);
+  if (n >= PIN_MAX_FAIL) fail_('locked', 'Terlalu banyak PIN salah. Coba lagi dalam 15 menit.');
+  if (!safeEq_(hashPw_(String(b.pin || '').trim(), c.salt), c.hash)) { cache.put('pinfail', String(n + 1), LOGIN_LOCK_SEC); fail_('unauthorized', 'PIN salah.'); }
+  return { token: issueViewerToken_(c), exp: Date.now() + VIEWER_TTL_MS, pin: true };
+}
+/** Admin: pasang/ganti PIN (semua viewer harus memasukkan PIN baru) atau matikan PIN (pin kosong + off=true). */
+function actSetViewerPin_(me, b) {
+  var p = props_(), old = pinCfg_();
+  if (b.off === true) { p.deleteProperty('VIEWER_PIN'); log_(me.email, 'viewerPin', 'dimatikan'); bumpDataVersion_(); return { pin: false }; }
+  var pin = String(b.pin || '').trim();
+  if (!/^\d{6,12}$/.test(pin)) fail_('invalid', 'PIN harus 6–12 digit angka.');
+  var salt = Utilities.getUuid();
+  p.setProperty('VIEWER_PIN', JSON.stringify({ salt: salt, hash: hashPw_(pin, salt), ver: (old && old.ver || 0) + 1, at: Date.now(), by: me.email }));
+  log_(me.email, 'viewerPin', old ? 'diganti' : 'diaktifkan');
+  bumpDataVersion_();
+  return { pin: true };
+}

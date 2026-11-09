@@ -1,5 +1,8 @@
 # Cara Pakai LoGistic Tracking
 
+## PIN viewer
+Jika admin mengaktifkan **PIN viewer** (Pengaturan → PIN viewer), aplikasi meminta PIN sebelum menampilkan data. PIN diingat di perangkat selama 30 hari. Jika admin mengganti PIN, semua perangkat diminta PIN baru. Admin yang login tidak perlu PIN.
+
 ## Untuk semua orang (tanpa login)
 
 ### Tracking PR
@@ -30,6 +33,7 @@ Klik **Login admin** di kanan atas.
 | Barang baru (tidak ada di Master/PR) | Tab Stok → **+ Barang**. |
 | Ubah kategori, stok awal, rak, minimum | Klik barang → **Edit barang**. |
 | Sembunyikan barang usang | Klik barang → **Sembunyikan**. Hanya bisa jika stoknya 0 dan tidak sedang dipinjam. |
+| Batasi siapa yang bisa melihat | **Pengaturan → PIN viewer** → isi PIN 6–12 digit → **Aktifkan PIN**. Bagikan PIN hanya ke tim. |
 | Ganti link Google Sheet | **Pengaturan → Sumber data** → tempel link → **Uji & simpan**. Aplikasi menguji file dulu sebelum menyimpan. |
 | Tambah/hapus admin, ganti password | **Pengaturan → Admin**. |
 
@@ -48,6 +52,8 @@ Klik **Login admin** di kanan atas.
 | *File tidak bisa dibuka oleh akun pemilik Apps Script* | File belum dibagikan ke akun Google yang men-deploy Apps Script. Bagikan minimal sebagai *Pelihat*. |
 | *Kolom "Deskripsi" tidak ditemukan* | Format Tracking PR berubah. Tab pertama (atau tab bernama `TRACKING PR`) harus memakai format log book, dengan judul kolom B = `Deskripsi`. |
 | *Kolom "Nama Barang" tidak ditemukan* | Master Stok harus punya tab `MASTER` dengan judul kolom `Nama Barang · Satuan · Kategori · Stok Awal · Lokasi Rak · Stok Minimum · Catatan`. |
+| *Argumen tak valid: timeZone* saat Uji & simpan | Sudah diperbaiki di v1.3.0: file yang dibuka dengan akses Pelihat tidak mengirim zona waktu. Tempel ulang `dist/LoGistic.gs` ke Apps Script lalu **Kelola deployment → Edit → Versi baru → Terapkan**. |
+| *Masukkan PIN* / *PIN salah* | Minta PIN terbaru ke admin. Salah 20 kali (dari semua perangkat) → dikunci 15 menit. |
 | *Sesi berakhir* | Sesi admin berlaku 12 jam. Login lagi. |
 | *Terlalu banyak percobaan gagal* | Login salah 5 kali. Tunggu 15 menit. |
 | Lupa semua password admin | Di editor Apps Script jalankan `resetAdmins`, lalu ambil kode setup baru dari log dan buat admin lagi. Data stok tidak terhapus. |

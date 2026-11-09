@@ -118,7 +118,9 @@ t('Mode script di Master: cukup link PR → PR disalin ke tab PR_DATA di Master'
   const MID = 'MASTERGSHEET000000000000000000000000000001';
   const h = createEnv({ boundId: MID }), e3 = h.__env;
   e3.__addSheetFile(MID, 'Master Stok', 'MASTER', MASTER.slice(1));
-  e3.__addSheetFile('PRSHEETID00000000000000000000000000000000002', 'TRACKING PR SAFRAN', 'Tracking PR', prRows);
+  // file PR dibuka sebagai Pelihat: zona waktu spreadsheet kosong + sel tanggal berupa Date (kasus error produksi 9 Nov)
+  const prRowsDates = prRows.map(r => r.map(v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? new Date(v + 'T00:00:00+07:00') : v));
+  e3.__addSheetFile('PRSHEETID00000000000000000000000000000000002', 'TRACKING PR SAFRAN', 'Tracking PR', prRowsDates, '');
   h.setup();
   const ms = e3.SpreadsheetApp.openById(MID);
   assert.ok(['TX', 'ITEMS', 'LOG'].every(n => ms.getSheetByName(n)), 'tab TX/ITEMS/LOG dibuat di Master');
@@ -136,6 +138,28 @@ t('Mode script di Master: cukup link PR → PR disalin ke tab PR_DATA di Master'
   assert.strictEqual(String(copy.data[3][14]), '20', 'PR_DATA ikut diperbarui');
   const s2 = h.post({ action: 'setAutoSync', token: a, on: true }); assert.ok(s2.data.autoSync);
   h.syncPR(); // tidak error saat tidak ada perubahan
+});
+t('PIN viewer: data terkunci tanpa PIN, terbuka dengan PIN/admin, ganti PIN membatalkan token lama', () => {
+  const h = createEnv(), e4 = h.__env; h.setup();
+  e4.__addSheetFile('PRSHEETID00000000000000000000000000000000003', 'PR', 'TRACKING PR', prRows);
+  const a = h.post({ action: 'setupAdmin', setupKey: e4.__props.SETUP_KEY, email: 'a@x.co', password: 'rahasia123' }).data.token;
+  assert.ok(h.post({ action: 'setSources', token: a, prUrl: 'PRSHEETID00000000000000000000000000000000003' }).ok);
+  assert.ok(h.post({ action: 'getPR' }).ok, 'tanpa PIN: publik');
+  assert.strictEqual(h.post({ action: 'setViewerPin', token: a, pin: '12ab' }).code, 'invalid');
+  assert.ok(h.post({ action: 'setViewerPin', token: a, pin: '246810' }).ok);
+  assert.strictEqual(h.get({ action: 'status' }).data.pin, true);
+  assert.strictEqual(h.post({ action: 'getPR' }).code, 'pin_required');
+  assert.strictEqual(h.post({ action: 'getStock' }).code, 'pin_required');
+  assert.strictEqual(h.get({ action: 'pr' }).code, 'pin_required', 'GET lama juga terkunci');
+  assert.strictEqual(h.post({ action: 'viewerLogin', pin: '111111' }).code, 'unauthorized');
+  const v = h.post({ action: 'viewerLogin', pin: '246810' }).data.token; assert.ok(v);
+  assert.ok(h.post({ action: 'getPR', token: v }).ok); assert.ok(h.post({ action: 'getStock', token: v }).ok);
+  assert.ok(h.post({ action: 'getPR', token: a }).ok, 'admin tetap bisa');
+  assert.strictEqual(h.post({ action: 'saveTx', token: v, lines: [] }).code, 'forbidden', 'token viewer bukan admin');
+  assert.ok(h.post({ action: 'setViewerPin', token: a, pin: '135790' }).ok);
+  assert.strictEqual(h.post({ action: 'getPR', token: v }).code, 'pin_required', 'token lama gugur');
+  assert.ok(h.post({ action: 'setViewerPin', token: a, off: true }).ok);
+  assert.ok(h.post({ action: 'getPR' }).ok, 'PIN dimatikan: publik lagi');
 });
 if (prFile) t('Smoke data nyata: Tracking PR SAFRAN lewat setSources + GET pr/stock', () => {
   const h = createEnv(), e2 = h.__env; h.setup();

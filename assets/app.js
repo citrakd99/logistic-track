@@ -37,7 +37,7 @@
 
   // ---------- state ----------
   const state = {
-    route: 'pr', sub: 'stok', today: '', status: null, auth: load('lt_auth', null),
+    route: 'pr', sub: 'stok', today: '', status: null, auth: load('lt_auth', null), vtok: load('lt_vtok', null),
     pr: null, prErr: null, stock: null, stockErr: null, loading: {},
     prf: Object.assign({ q: '', st: '', supplier: '', flag: '', hideDone: true, sort: 'desc' }, load('lt_prf', {})), open: new Set(),
     sf: Object.assign({ q: '', kat: '', filter: '', sort: 'nama', onlySisa: false, showHidden: false, htype: '', hfrom: '', hto: '', hq: '' }, load('lt_sf', {}))
@@ -47,14 +47,28 @@
   const API = () => (window.LT_CONFIG && window.LT_CONFIG.API_URL) || load('lt_api', '');
 
   // ---------- API ----------
+  const viewToken = () => (state.auth && state.auth.token) || (state.vtok && state.vtok.exp > Date.now() ? state.vtok.token : '');
   async function apiGet(action, fresh) {
-    if ((action === 'pr' || action === 'stock') && !navigator.onLine) return offlineData(action);
-    const url = API() + '?action=' + encodeURIComponent(action) + (fresh ? '&fresh=1' : '') + '&_=' + Date.now();
+    if (action === 'status') {
+      let j;
+      try { const r = await fetch(API() + '?action=status&_=' + Date.now(), { redirect: 'follow' }); j = await r.json(); }
+      catch (e) { throw { code: 'network', message: 'Tidak bisa menghubungi server. Periksa koneksi internet.' }; }
+      if (!j.ok) throw j;
+      return j.data;
+    }
+    // data PR/stok lewat POST: token (PIN viewer / admin) ada di body, bukan di URL
+    if (!navigator.onLine) return offlineData(action);
     let j;
-    try { const r = await fetch(url, { redirect: 'follow' }); j = await r.json(); }
-    catch (e) { if (action === 'pr' || action === 'stock') return offlineData(action); throw { code: 'network', message: 'Tidak bisa menghubungi server. Periksa koneksi internet atau URL API.' }; }
-    if (!j.ok) throw j;
-    if (action === 'pr' || action === 'stock') { j.data.offlineAt = null; try { localStorage.setItem('lt_last_' + action, JSON.stringify({ at: Date.now(), data: j.data })); } catch (e) { /* penyimpanan penuh: abaikan */ } }
+    try {
+      const r = await fetch(API(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: action === 'pr' ? 'getPR' : 'getStock', token: viewToken(), fresh: !!fresh }) });
+      j = await r.json();
+    } catch (e) { return offlineData(action); }
+    if (!j.ok) {
+      if (j.code === 'pin_required') { state.vtok = null; store('lt_vtok', null); store('lt_last_pr', null); store('lt_last_stock', null); }
+      throw j;
+    }
+    j.data.offlineAt = null;
+    try { localStorage.setItem('lt_last_' + action, JSON.stringify({ at: Date.now(), data: j.data })); } catch (e) { /* penyimpanan penuh: abaikan */ }
     return j.data;
   }
   /** Data terakhir yang tersimpan di perangkat, dipakai saat offline. */
@@ -71,7 +85,7 @@
       j = await r.json();
     } catch (e) { throw { code: 'network', message: 'Tidak bisa menghubungi server. Coba lagi.' }; }
     if (!j.ok) {
-      if (j.code === 'unauthorized' || j.code === 'forbidden') { if (action !== 'login' && action !== 'setupAdmin' && action !== 'changePassword') logout(true); }
+      if (j.code === 'unauthorized' || j.code === 'forbidden') { if (!['login', 'setupAdmin', 'changePassword', 'viewerLogin'].includes(action)) logout(true); }
       throw j;
     }
     return j.data;
@@ -147,9 +161,31 @@
     else renderSettings(v);
   }
   function errView(e, retry) {
+    if (e && e.code === 'pin_required') return pinView();
     const nc = e && e.code === 'not_configured';
     return `<div class="empty"><h3>${nc ? 'Sumber data belum diatur' : 'Data belum bisa dimuat'}</h3>${esc(e && e.message || 'Kesalahan tidak diketahui')}
       ${nc && isAdmin() ? '<p><a class="btn primary" href="#pengaturan">Buka Pengaturan</a></p>' : nc ? '<p class="hint">Hubungi admin untuk mengatur link Google Sheet.</p>' : `<p><button class="btn" id="${retry}">Coba lagi</button></p>`}</div>`;
+  }
+  function pinView() {
+    setTimeout(bindPin, 0);
+    return `<div class="card" style="max-width:420px;margin:24px auto;text-align:center">
+      <span class="eyebrow">Akses terbatas</span><h2>Masukkan PIN</h2>
+      <p class="hint">Data ini hanya untuk tim yang punya PIN. Minta PIN ke admin logistik.</p>
+      <input class="inp mono" id="pinIn" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="••••••" style="text-align:center;font-size:22px;letter-spacing:.3em" aria-label="PIN">
+      <div id="pinErr"></div><button class="btn primary" id="pinGo">Buka</button>
+      <span class="hint">PIN diingat di perangkat ini selama 30 hari.</span></div>`;
+  }
+  function bindPin() {
+    const go = $('#pinGo'), inp = $('#pinIn'); if (!go || go.dataset.b) return; go.dataset.b = 1; inp.focus();
+    const run = async () => {
+      go.disabled = true;
+      try {
+        const r = await apiPost('viewerLogin', { pin: inp.value });
+        state.vtok = r.token ? { token: r.token, exp: r.exp } : null; store('lt_vtok', state.vtok);
+        state.prErr = state.stockErr = null; state.pr = state.stock = null; route();
+      } catch (e) { showErr('pinErr', e.message); go.disabled = false; inp.select(); }
+    };
+    go.onclick = run; inp.onkeydown = e => { if (e.key === 'Enter') run(); };
   }
   function renderNoApi(v) {
     const L = (window.LT_CONFIG && window.LT_CONFIG.LEGACY) || {};
@@ -704,6 +740,12 @@
         ${st.bound ? '' : `<div class="f"><label for="cMs">Link Master Stok <span class="dim">(opsional)</span></label><input class="inp" id="cMs" value="${st.master ? esc(st.master.url || '') : ''}"></div>
         <div class="f"><label for="cDb">Link Data Sheet <span class="dim">(kosongkan untuk dibuat otomatis)</span></label><input class="inp" id="cDb" value="${st.db ? esc(st.db.url || '') : ''}"></div>`}
         <div id="cErr"></div><div><button class="btn primary" id="cSave">Uji & simpan</button></div></section>
+      <section class="card"><h2>PIN viewer</h2>
+        <p class="hint">${st.pin ? `<b>Aktif</b> sejak ${esc(fmtDT(st.pinAt))}. Hanya orang yang memasukkan PIN (atau admin yang login) yang bisa melihat data.` : '<b>Mati</b>. Siapa pun yang punya link situs bisa melihat data PR & stok.'}</p>
+        <div class="f"><label for="vPin">${st.pin ? 'PIN baru' : 'PIN'} (6–12 digit)</label><input class="inp mono" id="vPin" type="password" inputmode="numeric" maxlength="12" autocomplete="new-password"></div>
+        <div id="vErr"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="vSet">${st.pin ? 'Ganti PIN' : 'Aktifkan PIN'}</button>${st.pin ? '<button class="btn danger" id="vOff">Matikan PIN</button>' : ''}</div>
+        <span class="hint">Mengganti PIN membuat semua perangkat viewer harus memasukkan PIN baru.</span></section>
       <section class="card"><h2>Admin</h2>
         ${admins.map(a => `<div class="adm"><div><b>${esc(a.name)}</b>${a.me ? ' <span class="dim">(Anda)</span>' : ''}<div class="hint">${esc(a.email)}</div></div>${a.me ? '' : `<button class="btn sm danger" data-rmadm="${esc(a.email)}">Hapus</button>`}</div>`).join('')}
         <fieldset><legend>Tambah admin</legend><div class="grid2"><div class="f"><label for="nName">Nama</label><input class="inp" id="nName"></div><div class="f"><label for="nEmail">Email</label><input class="inp" id="nEmail" type="email"></div>
@@ -720,6 +762,8 @@
     };
     const cs = $('#cSync'); if (cs) cs.onclick = async () => { cs.disabled = true; cs.textContent = 'Menyalin…'; try { await apiPost('syncPR'); state.pr = null; state.stock = null; toast('Tracking PR disalin ke Master'); render(); } catch (e) { showErr('cErr', e.message); cs.disabled = false; cs.textContent = 'Sinkron sekarang'; } };
     const ca = $('#cAuto'); if (ca) ca.onclick = async () => { ca.disabled = true; try { await apiPost('setAutoSync', { on: !st.autoSync }); toast(st.autoSync ? 'Sinkron otomatis dimatikan' : 'Sinkron otomatis aktif tiap 10 menit'); render(); } catch (e) { showErr('cErr', e.message); ca.disabled = false; } };
+    $('#vSet').onclick = async () => { try { await apiPost('setViewerPin', { pin: val('vPin') }); toast(st.pin ? 'PIN diganti' : 'PIN viewer aktif'); render(); } catch (e) { showErr('vErr', e.message); } };
+    const vo = $('#vOff'); if (vo) vo.onclick = async () => { if (!confirm('Matikan PIN? Data akan bisa dilihat siapa pun yang punya link.')) return; try { await apiPost('setViewerPin', { off: true }); toast('PIN dimatikan'); render(); } catch (e) { showErr('vErr', e.message); } };
     $('#nAdd').onclick = async () => { try { await apiPost('addAdmin', { name: val('nName'), email: val('nEmail'), password: $('#nPw').value }); toast('Admin ditambahkan'); render(); } catch (e) { showErr('nErr', e.message); } };
     $$('[data-rmadm]').forEach(b => b.onclick = async () => { if (!confirm('Hapus admin ' + b.dataset.rmadm + '?')) return; try { await apiPost('removeAdmin', { email: b.dataset.rmadm }); toast('Admin dihapus'); render(); } catch (e) { toast(e.message, true); } });
     $('#pSave').onclick = async () => { try { setAuth(await apiPost('changePassword', { oldPassword: $('#pOld').value, newPassword: $('#pNew').value })); toast('Password diganti'); render(); } catch (e) { showErr('pErr', e.message); } };
@@ -740,7 +784,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.2.0';
+    $('#ver').textContent = 'v1.3.0';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }
