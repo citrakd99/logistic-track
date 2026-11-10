@@ -221,6 +221,42 @@ t('PIN viewer: data terkunci tanpa PIN, terbuka dengan PIN/admin, ganti PIN memb
   assert.ok(h.post({ action: 'setViewerPin', token: a, off: true }).ok);
   assert.ok(h.post({ action: 'getPR' }).ok, 'PIN dimatikan: publik lagi');
 });
+t('Edit dua arah: tab KENDALA bisa diedit dari Sheet & App (dropdown, tanggal, baris baru, riwayat)', () => {
+  const MID = 'MASTERGSHEET000000000000000000000000000009';
+  const h = createEnv({ boundId: MID }), e5 = h.__env;
+  e5.__addSheetFile(MID, 'Master Stok', 'MASTER', MASTER.slice(1));
+  e5.__addSheetFile('PRSHEETID00000000000000000000000000000000009', 'PR', 'TRACKING PR', prRows);
+  h.setup();
+  const a = h.post({ action: 'setupAdmin', setupKey: e5.__props.SETUP_KEY, email: 'a@x.co', password: 'rahasia123' }).data.token;
+  const ss = h.post({ action: 'setSources', token: a, prUrl: 'PRSHEETID00000000000000000000000000000000009' }); assert.ok(ss.ok, ss.message); assert.ok(ss.data.sheetEdit, 'tab dirapikan & trigger terpasang');
+  const sh = e5.SpreadsheetApp.openById(MID).getSheetByName('KENDALA'), C = n => ['id', 'prKey', 'prNo', 'itemNo', 'itemId', 'itemDesc', 'kategori', 'kendala', 'action', 'pic', 'komitmen', 'status'].indexOf(n) + 1;
+  assert.ok(sh.validations[C('status')] && sh.validations[C('komitmen')].date && sh.validations[C('pic')].list.includes('Anggun'), 'dropdown status/PIC & validasi tanggal');
+  assert.ok(sh.hidden.has(C('prKey')), 'kolom teknis disembunyikan');
+  assert.ok(e5.ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'saatSheetDiedit'));
+  // 1) baris baru diketik langsung di Sheet (tanpa id, tanggal sebagai Date, status kosong, PIC huruf kecil)
+  const row = Array(21).fill(''); row[C('prNo') - 1] = 'PR-001'; row[C('itemNo') - 1] = 1; row[C('kategori') - 1] = 'Pengiriman'; row[C('kendala') - 1] = 'Truk belum tersedia'; row[C('action') - 1] = 'Sewa truk'; row[C('pic') - 1] = 'aqsha'; row[C('komitmen') - 1] = new Date('2026-11-18T00:00:00+07:00');
+  sh.data[1] = row;
+  let k = h.get({ action: 'pr', fresh: '1' }).data.kendala; assert.strictEqual(k.length, 1, 'baris dari Sheet terbaca walau belum ber-id');
+  assert.strictEqual(k[0].komitmen, '2026-11-18'); assert.strictEqual(k[0].status, 'open'); assert.ok(/^row2$/.test(k[0].id));
+  // trigger edit memberi id, membakukan PIC, mencatat riwayat
+  h.saatSheetDiedit({ range: sh.getRange(2, C('kendala')), value: 'Truk belum tersedia', oldValue: '' });
+  assert.ok(String(sh.data[1][0]).startsWith('k'), 'id diberikan'); assert.strictEqual(sh.data[1][C('pic') - 1], 'Aqsha'); assert.strictEqual(sh.data[1][C('prKey') - 1], 'PR-001');
+  // 2) aplikasi follow-up baris itu (pakai id baru)
+  k = h.get({ action: 'pr' }).data.kendala; assert.ok(h.post({ action: 'kendalaStatus', token: a, id: k[0].id, op: 'followup', note: 'Vendor truk konfirmasi' }).ok);
+  // 3) geser tanggal langsung di Sheet → geser+1 & riwayat
+  sh.data[1][C('komitmen') - 1] = new Date('2026-11-20T00:00:00+07:00');
+  h.saatSheetDiedit({ range: sh.getRange(2, C('komitmen')), value: '46346', oldValue: '46344' });
+  // 4) tandai selesai lewat dropdown status di Sheet
+  sh.data[1][C('status') - 1] = 'Selesai';
+  h.saatSheetDiedit({ range: sh.getRange(2, C('status')), value: 'Selesai', oldValue: 'open' });
+  k = h.get({ action: 'pr' }).data.kendala[0];
+  assert.strictEqual(k.status, 'selesai'); assert.strictEqual(+k.geser, 1); assert.strictEqual(k.komitmen, '2026-11-20');
+  assert.ok(/Sheet: komitmen 2026-11-18 → 2026-11-20/.test(k.riwayat), k.riwayat); assert.ok(/follow-up: Vendor truk konfirmasi/.test(k.riwayat));
+  // 5) edit MASTER di Sheet langsung terbaca tanpa menunggu cache
+  const m = e5.SpreadsheetApp.openById(MID).getSheetByName('MASTER'); const before = h.get({ action: 'stock' }).data.items.find(i => i.name === 'Mesin Bor').awal;
+  m.data.find(r => r[0] === 'Mesin Bor')[3] = 9; h.saatSheetDiedit({ range: m.getRange(3, 4), value: '9', oldValue: '3' });
+  assert.strictEqual(h.get({ action: 'stock' }).data.items.find(i => i.name === 'Mesin Bor').awal, 9, 'sebelumnya ' + before);
+});
 if (prFile) t('Smoke data nyata: Tracking PR SAFRAN lewat setSources + GET pr/stock', () => {
   const h = createEnv(), e2 = h.__env; h.setup();
   e2.__addSheetFile('REALPRSHEET000000000000000000000000000000001', 'TRACKING PR SAFRAN', 'TRACKING PR', prRowsFromXlsx(prFile));

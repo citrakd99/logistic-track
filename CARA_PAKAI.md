@@ -21,6 +21,16 @@ Untuk item/PR yang tersendat, admin mencatat **Kenapa** (kendala) · **Apa** (ac
 - Di Daftar PR, item/PR yang punya kendala diberi tanda **⚠** (merah jika komitmen sudah lewat). Chip filter *Ada kendala terbuka* / *Komitmen action lewat*.
 - Viewer (pemegang PIN) bisa melihat; hanya admin yang mengisi. Data disimpan di tab **KENDALA** pada Sheet Master; riwayat setiap perubahan ada di kolom *riwayat*.
 
+### Edit dua arah: aplikasi ⇄ Google Sheet
+| Data | Dari aplikasi | Langsung di Sheet Master |
+|---|---|---|
+| Kendala & action plan (tab **KENDALA**) | ✔ | ✔ — dropdown *status* (open / selesai / batal), *kategori*, *pic*; kolom *komitmen* berupa tanggal (klik dua kali → kalender). Baris baru cukup isi **prNo, itemNo (kosong = seluruh PR), kategori, kendala, action, pic, komitmen** — ID & riwayat terisi otomatis. Mengubah tanggal komitmen di Sheet menambah hitungan *geser*. |
+| Barang (tab **MASTER**) | ✔ | ✔ — kategori, stok awal, rak, minimum, catatan; barang baru = baris baru |
+| Transaksi stok (TX), ITEMS, LOG, PR_DATA | ✔ | Sebaiknya jangan — Sheet memberi peringatan sebelum diedit |
+| Tracking PR | ✖ (hanya dibaca) | Diedit pemilik Sheet PR |
+
+Perubahan dari Sheet langsung terbaca aplikasi (tekan **↻ Muat ulang** jika halaman sudah terbuka). Fitur ini butuh trigger edit: otomatis terpasang saat **Uji & simpan** di Pengaturan, atau lewat menu Sheet **LoGistic → Aktifkan edit dari Sheet**.
+
 ### Stok Gudang
 - **Stok** = stok awal (Master) + barang masuk dari PR (Qty Terima) − dipakai − dipinjam + dikembalikan ± koreksi.
 - Tab **Stok**: cari barang, saring kategori, atau centang *Ada sisa PR* untuk melihat barang yang masih ditunggu kedatangannya.

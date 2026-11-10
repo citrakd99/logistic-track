@@ -13,6 +13,10 @@ class Sheet {
   getMaxColumns() { return 26; }
   insertColumnsAfter() { }
   clearContents() { this.data = []; }
+  hideColumns(c) { (this.hidden = this.hidden || new Set()).add(c); }
+  setColumnWidth() { }
+  getProtections() { return this.prot ? [this.prot] : []; }
+  protect() { const p = { setDescription: () => p, setWarningOnly: (w) => { p.warning = w; return p; } }; this.prot = p; return p; }
   insertRowsAfter(_, n) { this.maxRows += n; }
   setFrozenRows() { }
   getDataRange() { const lr = this.getLastRow(), lc = Math.max(1, ...this.data.map(r => r.length)); return this.getRange(1, 1, Math.max(1, lr), lc); }
@@ -20,10 +24,11 @@ class Sheet {
     const sh = this;
     if (r + nr - 1 > sh.maxRows) throw new Error('Range di luar batas sheet');
     return {
+      getSheet() { return sh; }, getRow() { return r; }, getColumn() { return c; }, getNumRows() { return nr; },
       getValues() { const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const v = (sh.data[r - 1 + i] || [])[c - 1 + j]; row.push(v === undefined || v === null ? '' : v); } out.push(row); } return out; },
       setValues(v) { if (v.length !== nr || v[0].length !== nc) throw new Error('Ukuran setValues tidak cocok'); for (let i = 0; i < nr; i++) { sh.data[r - 1 + i] = sh.data[r - 1 + i] || []; for (let j = 0; j < nc; j++) sh.data[r - 1 + i][c - 1 + j] = v[i][j]; } return this; },
       setValue(v) { sh.data[r - 1] = sh.data[r - 1] || []; sh.data[r - 1][c - 1] = v; return this; },
-      setDataValidation(rule) { sh.validation = { row: r, col: c, n: nr, rule }; return this; },
+      setDataValidation(rule) { (sh.validations = sh.validations || {})[c] = rule; if (c === 3) sh.validation = { row: r, col: c, n: nr, rule }; return this; },
       setFontWeight() { return this; }, setNumberFormat() { return this; }
     };
   }
@@ -83,10 +88,11 @@ function createEnv(opts = {}) {
     ScriptApp: (() => { const tr = []; return {
       getProjectTriggers: () => tr.slice(),
       deleteTrigger: t => { const i = tr.indexOf(t); if (i >= 0) tr.splice(i, 1); },
-      newTrigger: fn => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => { const t = { getHandlerFunction: () => fn }; tr.push(t); return t; } }) }) })
+      newTrigger: fn => { const mk = () => ({ create: () => { const t = { getHandlerFunction: () => fn }; tr.push(t); return t; } }); return { timeBased: () => ({ everyMinutes: mk }), forSpreadsheet: () => ({ onEdit: mk }) }; }
     }; })(),
     SpreadsheetApp: {
-      newDataValidation: () => { const rule = {}; const b = { requireValueInList: (l) => { rule.list = l.slice(); return b; }, setAllowInvalid: (x) => { rule.allowInvalid = x; return b; }, setHelpText: () => b, build: () => rule }; return b; },
+      ProtectionType: { SHEET: 'SHEET' },
+      newDataValidation: () => { const rule = {}; const b = { requireDate: () => { rule.date = true; return b; }, requireValueInList: (l) => { rule.list = l.slice(); return b; }, setAllowInvalid: (x) => { rule.allowInvalid = x; return b; }, setHelpText: () => b, build: () => rule }; return b; },
       getActiveSpreadsheet: () => (opts.boundId && files[opts.boundId] ? files[opts.boundId].ss : null),
       getUi: () => { throw new Error('no ui'); },
       openById: id => { const f = files[id]; if (!f || !f.ss) throw new Error('Spreadsheet tidak bisa dibuka: ' + id); return f.ss; },
