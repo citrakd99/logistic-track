@@ -320,7 +320,7 @@
         <select class="inp" id="prsup" style="width:auto;max-width:220px" aria-label="Supplier"><option value="">Semua supplier</option>${sups.map(s => `<option ${s === f.supplier ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
         <select class="inp" id="prsort" style="width:auto" aria-label="Urutan"><option value="desc" ${f.sort === 'desc' ? 'selected' : ''}>PR terbaru</option><option value="asc" ${f.sort === 'asc' ? 'selected' : ''}>PR terlama</option></select>
         <label class="check"><input type="checkbox" id="prdone" ${f.hideDone ? 'checked' : ''}>Sembunyikan Close & Cancel</label>
-        <button class="btn sm" id="prxlsx">Excel</button><button class="btn sm" id="prprint">Cetak / PDF</button>${isAdmin() ? '<button class="btn sm primary" id="prNew">+ PR baru</button>' : ''}
+        <button class="btn sm" id="prxlsx" title="Item yang sedang tampil + kendala + foto SJ">Excel</button><button class="btn sm" id="allxlsx" title="Ringkasan, Tracking PR, Kendala, Foto SJ, Stok, Riwayat, Dipinjam">Excel lengkap</button><button class="btn sm" id="prprint">Cetak / PDF</button>${isAdmin() ? '<button class="btn sm primary" id="prNew">+ PR baru</button>' : ''}
       </div>
       <div class="resultline">${active || f.hideDone ? `Menampilkan ${shownItems} item di ${shownPR} PR` : ''}</div>
       <div style="display:flex;flex-direction:column;gap:8px">${out.join('') || '<div class="empty"><h3>Tidak ada yang cocok</h3>Coba kata kunci lain atau hapus filter.</div>'}</div>`;
@@ -333,6 +333,7 @@
     $('#prsort').onchange = e => { f.sort = e.target.value; savePrf(); render(); };
     $('#prdone').onchange = e => { f.hideDone = e.target.checked; savePrf(); render(); };
     $('#prxlsx').onclick = () => exportPR(prMap);
+    $('#allxlsx').onclick = e => exportAll(e.currentTarget);
     $('#prprint').onclick = () => { state.printAll = true; render(); setTimeout(() => { window.print(); state.printAll = false; render(); }, 80); };
     $$('[data-toggle]', v).forEach(h => { const go = () => { const k = h.dataset.toggle; state.open.has(k) ? state.open.delete(k) : state.open.add(k); render(); }; h.onclick = go; h.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
     $$('[data-item]', v).forEach(r => r.onclick = () => openPRItem(r.dataset.item, prMap));
@@ -687,7 +688,7 @@
       ${Object.keys(byPic).length ? `<div class="chips"><span class="chip static">Per PIC:</span>${Object.entries(byPic).sort((a, b) => b[1].late - a[1].late || b[1].n - a[1].n).map(([p, c]) => `<button class="chip ${f.pic === p ? 'on' : ''} ${c.late ? 'warn' : ''}" data-kpic="${esc(p)}">${esc(p)} · ${c.n}${c.late ? ` · <b>${c.late} lewat</b>` : ''}</button>`).join('')}</div>` : ''}
       <div class="tools"><input class="inp grow" id="kq" type="search" placeholder="Cari PR, barang, kendala, PIC…" value="${esc(f.q)}" aria-label="Cari kendala">
         <select class="inp" id="kst" style="width:auto" aria-label="Status">${[['open', 'Terbuka'], ['late', 'Komitmen lewat'], ['soon', 'Jatuh tempo ≤ 3 hari'], ['selesai', 'Selesai'], ['semua', 'Semua']].map(([k2, l]) => `<option value="${k2}" ${f.st === k2 ? 'selected' : ''}>${l}</option>`).join('')}</select>
-        ${f.pic ? `<button class="chip on" id="kpicClr">PIC: ${esc(f.pic)} ✕</button>` : ''}<button class="btn sm" id="kxlsx">Excel</button></div>
+        ${f.pic ? `<button class="chip on" id="kpicClr">PIC: ${esc(f.pic)} ✕</button>` : ''}<button class="btn sm" id="kxlsx">Excel</button><button class="btn sm" data-allk="1">Excel lengkap</button></div>
       <div class="resultline">${list.length} catatan${isAdmin() ? ' · tambah kendala dari detail item di Daftar PR' : ''}</div>
       <div class="table">${list.length ? `<div class="kr head"><div>Kapan</div><div>PR / item</div><div>Kenapa → Action</div><div>Siapa</div><div class="c-hide">Follow-up terakhir</div></div>` + list.map(k => { const lb = kLabel(k); return `<div class="kr" data-kid="${esc(k.id)}" role="button" tabindex="0">
           <div><b>${esc(fmtD(k.komitmen))}</b><br><span class="pill ${lb[1]}">${esc(lb[0])}</span>${+k.geser ? `<div class="hint">digeser ${esc(k.geser)}×</div>` : ''}</div>
@@ -701,12 +702,13 @@
     const pc = $('#kpicClr'); if (pc) pc.onclick = () => { f.pic = ''; render(); };
     let qt; $('#kq').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { f.q = e.target.value.trim(); render(); const i = $('#kq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
     $$('.kr[data-kid]', v).forEach(r => { r.onclick = () => openKendala(r.dataset.kid); r.onkeydown = e => { if (e.key === 'Enter') openKendala(r.dataset.kid); }; });
+    $$('[data-allk]', v).forEach(b => b.onclick = () => exportAll(b));
     $('#kxlsx').onclick = async () => {
       try {
         const X = await xlsxLib(), wb = X.utils.book_new();
         const aoa = [['Status', 'Komitmen', 'Hari lewat', 'Digeser', 'No. PR', 'Item', 'Deskripsi', 'Kategori', 'Kendala (kenapa)', 'Action (apa)', 'PIC (siapa)', 'Follow-up terakhir', 'Dicatat oleh', 'Riwayat']]
           .concat(list.map(k => [kLabel(k)[0], k.komitmen, kLate(k) ? daysSince(k.komitmen) : '', +k.geser || 0, k.prNo, k.itemNo, k.itemDesc, k.kategori, k.kendala, k.action, k.pic, k.followup, k.createdBy, k.riwayat]));
-        X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), 'Kendala PR'); X.writeFile(wb, `Kendala-PR-${today()}.xlsx`);
+        X.utils.book_append_sheet(wb, mkSheet(X, aoa), 'Kendala PR'); X.writeFile(wb, `Kendala-PR-${today()}.xlsx`);
       } catch (e) { toast(e.message || 'Export gagal', true); }
     };
   }
@@ -716,15 +718,76 @@
     await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = res; s.onerror = () => rej(new Error('Gagal memuat pustaka Excel')); document.head.appendChild(s); });
     return window.XLSX;
   }
+  // ---------- export Excel ----------
+  const isoD = v => { if (!isISO(v)) return v === null || v === undefined ? '' : v; const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d); };
+  /** Sheet rapi: tanggal asli Excel, filter di judul kolom, lebar kolom otomatis, link bisa diklik. links: [[baris, kolom, url]] (0-based, baris data mulai 1). */
+  function mkSheet(X, aoa, links) {
+    const data = aoa.map((r, i) => i === 0 ? r : r.map(v => isISO(v) ? isoD(v) : v));
+    const ws = X.utils.aoa_to_sheet(data, { cellDates: true, dateNF: 'd-mmm-yyyy' });
+    const ref = X.utils.decode_range(ws['!ref'] || 'A1:A1');
+    ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: ref.e.c } }) };
+    ws['!cols'] = aoa[0].map((h, c) => ({ wch: Math.min(48, Math.max(String(h).length + 2, ...aoa.slice(1, 300).map(r => String(r[c] instanceof Date ? 'dd-mmm-yyyy' : r[c] ?? '').split('\n')[0].length + 1))) }));
+    for (const k in ws) { const cell = ws[k]; if (cell && cell.t === 'd') cell.z = 'd-mmm-yyyy'; }
+    (links || []).forEach(([r, c, url]) => { const a = X.utils.encode_cell({ r, c }); if (ws[a] && url) ws[a].l = { Target: url, Tooltip: 'Buka di Google Drive' }; });
+    return ws;
+  }
+  const fotoOfItem = it => (state.pr.foto || []).filter(f => f.prKey === it.pr && (!String(f.items || '').trim() || String(f.items).split(',').map(x => x.trim()).includes(String(it.no))));
+  function prSheets(X, items) {
+    const prMap = new Map(state.pr.prs.map(p => [p.key, p])), keys = new Set(items.map(i => i.pr)), out = [];
+    const links = [];
+    const aoa = [['No. PR', 'Tgl PR', 'Untuk', 'No', 'Deskripsi', 'Spesifikasi', 'Qty', 'Sat', 'Dibutuhkan', 'Qty Release', 'Sat Release', 'Balance', 'Tgl Release', 'Tgl PO', 'No. PO', 'ETA', 'Qty Terima', 'Sat Terima', 'Tgl Terima', 'No. SJ', 'Supplier', 'Status', 'Keterangan', 'Kendala terbuka (PIC · komitmen)', 'Jml foto SJ', 'Link foto SJ']]
+      .concat(items.map((i, n) => {
+        const ph = fotoOfItem(i); if (ph.length) links.push([n + 1, 25, ph[0].url]);
+        return [i.prNo, prMap.get(i.pr)?.prDate || '', prMap.get(i.pr)?.purpose || '', i.no, i.desc, i.spec, i.qty, i.unit, i.reqDate || i.reqNote, i.ccQty, i.ccUnit, i.balance, i.releaseDate, i.poDate, i.poNo, i.eta, i.recvQty, i.recvUnit, i.recvDate, i.sjNo, i.supplier, i.status, i.remarks,
+          kendalaOf(i).filter(kOpen).map(k => `${k.kendala} → ${k.action} (${k.pic} · ${k.komitmen})`).join('\n'), ph.length || '', ph.length ? (ph.length > 1 ? `Buka foto (1 dari ${ph.length})` : 'Buka foto') : ''];
+      }));
+    out.push(['Tracking PR', mkSheet(X, aoa, links)]);
+    const ks = (state.pr.kendala || []).filter(k => keys.has(k.prKey));
+    out.push(['Kendala', mkSheet(X, [['Status', 'Komitmen', 'Hari lewat', 'Digeser', 'No. PR', 'Item', 'Deskripsi', 'Kategori', 'Kendala (kenapa)', 'Action (apa)', 'PIC (siapa)', 'Follow-up terakhir', 'Dicatat oleh', 'Riwayat']]
+      .concat(ks.map(k => [kLabel(k)[0], k.komitmen, kLate(k) ? daysSince(k.komitmen) : '', +k.geser || 0, k.prNo, k.itemNo, k.itemDesc, k.kategori, k.kendala, k.action, k.pic, k.followup, k.createdBy, k.riwayat])))]);
+    const fs = (state.pr.foto || []).filter(f => keys.has(f.prKey)).sort((a, b) => (+b.uploadedAt || 0) - (+a.uploadedAt || 0)), fl = [];
+    out.push(['Foto SJ', mkSheet(X, [['Tgl upload', 'No. PR', 'Item', 'No. SJ', 'Catatan', 'Diunggah oleh', 'Link foto', 'Nama file', 'Folder Drive']]
+      .concat(fs.map((f, n) => { fl.push([n + 1, 6, f.url]); return [f.folder, f.prNo, f.items, f.sjNo, f.note, f.uploadedBy, 'Buka foto', f.fileName, 'LoGistic Tracking/Surat Jalan/' + f.folder]; })), fl)]);
+    return out;
+  }
+  function summarySheet(X) {
+    const rows = [['Ringkasan LoGistic Tracking', ''], ['Dibuat', fmtDT(Date.now())], [], ['Status item PR', 'Jumlah']];
+    if (state.pr) {
+      STATUSES.forEach(st => rows.push([st.k, state.pr.items.filter(i => i.status === st.k).length]));
+      rows.push(['Total item', state.pr.items.length], ['Total PR', state.pr.prs.length], []);
+      const ks = state.pr.kendala || [];
+      rows.push(['Kendala', 'Jumlah'], ['Terbuka', ks.filter(kOpen).length], ['Komitmen lewat', ks.filter(kLate).length], ['Selesai', ks.filter(k => k.status === 'selesai').length], []);
+      const byPic = {}; ks.filter(kOpen).forEach(k => { const p = byPic[k.pic] || (byPic[k.pic] = [0, 0]); p[0]++; if (kLate(k)) p[1]++; });
+      rows.push(['PIC', 'Terbuka', 'Lewat komitmen']); Object.entries(byPic).forEach(([p, c]) => rows.push([p, c[0], c[1]])); rows.push([]);
+      rows.push(['Foto surat jalan', (state.pr.foto || []).length]);
+    }
+    if (state.stock) {
+      const it = state.stock.items.filter(i => !i.hidden);
+      rows.push([], ['Stok', 'Jumlah jenis'], ['Tersedia', it.filter(i => i.stok > 0).length], ['Menipis', it.filter(i => i.status === 'low').length], ['Habis', it.filter(i => i.status === 'out').length], ['Alat dipinjam', state.stock.loans.length]);
+    }
+    const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 16 }]; return ws;
+  }
+  function saveWb(X, sheets, name) { const wb = X.utils.book_new(); sheets.forEach(([n, ws]) => X.utils.book_append_sheet(wb, ws, n)); X.writeFile(wb, name); }
   async function exportPR(prMap) {
     try {
       const X = await xlsxLib(), f = state.prf;
-      const rows = state.pr.items.filter(i => prMatches(i, prMap));
-      const aoa = [['No. PR', 'Tgl PR', 'No', 'Deskripsi', 'Spesifikasi', 'Qty', 'Sat', 'Dibutuhkan', 'Qty Release', 'Sat Release', 'Tgl Release', 'Tgl PO', 'No. PO', 'ETA', 'Qty Terima', 'Sat Terima', 'Tgl Terima', 'No. SJ', 'Supplier', 'Status', 'Keterangan', 'Kendala terbuka (PIC · komitmen)']]
-        .concat(rows.map(i => [i.prNo, prMap.get(i.pr)?.prDate || '', i.no, i.desc, i.spec, i.qty, i.unit, i.reqDate || i.reqNote, i.ccQty, i.ccUnit, i.releaseDate, i.poDate, i.poNo, i.eta, i.recvQty, i.recvUnit, i.recvDate, i.sjNo, i.supplier, i.status, i.remarks, kendalaOf(i).filter(kOpen).map(k => `${k.kendala} → ${k.rencana || k.action} (${k.pic} · ${k.komitmen})`).join('\n')]));
-      const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), 'Tracking PR');
-      X.writeFile(wb, `Tracking-PR-${today()}${f.st ? '-' + f.st.replace(/\s+/g, '') : ''}.xlsx`);
+      saveWb(X, prSheets(X, state.pr.items.filter(i => prMatches(i, prMap))), `Tracking-PR-${today()}${f.st ? '-' + f.st.replace(/\s+/g, '') : ''}.xlsx`);
     } catch (e) { toast(e.message || 'Export gagal', true); }
+  }
+  /** Satu file berisi semuanya: Ringkasan, Tracking PR, Kendala, Foto SJ, Stok, Riwayat, Dipinjam. */
+  async function exportAll(btn) {
+    const lb = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = 'Menyiapkan…'; }
+    try {
+      const X = await xlsxLib();
+      if (!state.pr) { state.pr = await apiGet('pr'); state.today = state.pr.today || state.today; }
+      indexKendala();
+      if (!state.stock) { try { state.stock = await apiGet('stock'); indexStock(); } catch (e) { /* stok belum diatur: lewati */ } }
+      const sheets = [['Ringkasan', summarySheet(X)], ...prSheets(X, state.pr.items)];
+      if (state.stock) sheets.push(...stockSheets(X));
+      saveWb(X, sheets, `LoGistic-Tracking-lengkap-${today()}.xlsx`);
+      toast('Excel lengkap diunduh');
+    } catch (e) { toast(e.message || 'Export gagal', true); }
+    if (btn) { btn.disabled = false; btn.textContent = lb; }
   }
 
   // =====================================================================
@@ -784,7 +847,7 @@
         <select class="inp" id="ssort" style="width:auto" aria-label="Urutan"><option value="nama" ${f.sort === 'nama' ? 'selected' : ''}>Nama A–Z</option><option value="last" ${f.sort === 'last' ? 'selected' : ''}>Aktivitas terakhir</option><option value="stok" ${f.sort === 'stok' ? 'selected' : ''}>Stok terbanyak</option><option value="low" ${f.sort === 'low' ? 'selected' : ''}>Stok tersedikit</option></select>
         <label class="check"><input type="checkbox" id="ssisa" ${f.onlySisa ? 'checked' : ''}>Ada sisa PR</label>
         ${isAdmin() ? `<label class="check"><input type="checkbox" id="shid" ${f.showHidden ? 'checked' : ''}>Tampilkan tersembunyi</label>` : ''}
-        <button class="btn sm" id="sxlsx">Excel</button>
+        <button class="btn sm" id="sxlsx">Excel</button><button class="btn sm" data-allx="1">Excel lengkap</button>
         ${isAdmin() ? `<button class="btn sm ${f.katMode ? 'primary' : ''}" id="sKatMode" aria-pressed="${!!f.katMode}">${f.katMode ? '✓ Selesai koreksi' : 'Koreksi kategori'}</button><button class="btn sm" id="sNewItem">+ Barang</button><button class="btn sm primary" id="sOut">Catat keluar</button>` : ''}
       </div>
       ${isAdmin() && f.katMode ? `<div class="katbar"><span>Koreksi cepat: ketuk kategori di tiap baris, langsung tersimpan. ${rows.length ? `Atau ubah <b>${Math.min(rows.length, LIM)}</b> barang yang tampil sekaligus:` : ''}</span>${rows.length ? KATS.map(k => `<button class="btn sm" data-bulkkat="${k}">Semua → ${k}</button>`).join('') : ''}</div>` : ''}
@@ -804,6 +867,7 @@
     const sh = $('#shid'); if (sh) sh.onchange = e => { f.showHidden = e.target.checked; render(); };
     const sc = $('#sclr'); if (sc) sc.onclick = () => { f.filter = ''; render(); };
     $('#sxlsx').onclick = exportStock;
+    $$('[data-allx]', el).forEach(b => b.onclick = () => exportAll(b));
     const so = $('#sOut'); if (so) so.onclick = () => openOut('pakai');
     const sn = $('#sNewItem'); if (sn) sn.onclick = () => openItemForm(null);
     const km = $('#sKatMode'); if (km) km.onclick = () => { f.katMode = !f.katMode; render(); };
@@ -835,7 +899,7 @@
         <select class="inp" id="htype" style="width:auto" aria-label="Jenis"><option value="">Semua jenis</option>${[['in', 'Masuk (PR)'], ['keluar', 'Semua keluar'], ['pakai', 'Pemakaian'], ['serah', 'Serah APD'], ['pinjam', 'Pinjam'], ['kembali', 'Kembali'], ['koreksi', 'Koreksi']].map(([k, l]) => `<option value="${k}" ${f.htype === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <input class="inp" type="date" id="hfrom" value="${esc(f.hfrom)}" style="width:auto" aria-label="Dari tanggal"><input class="inp" type="date" id="hto" value="${esc(f.hto)}" style="width:auto" aria-label="Sampai tanggal">
         ${f.htype || f.hfrom || f.hto || f.hq ? '<button class="btn sm ghost" id="hclr">Reset</button>' : ''}
-        <button class="btn sm" id="sxlsx">Excel</button>
+        <button class="btn sm" id="sxlsx">Excel</button><button class="btn sm" data-allx="1">Excel lengkap</button>
       </div>
       <div class="resultline">${ev.length} catatan${ev.length > LIM ? ` · menampilkan ${LIM} terbaru` : ''}</div>
       <div class="table" style="margin-top:6px">${out.join('') || '<div class="empty" style="border:0">Belum ada catatan.</div>'}</div>`;
@@ -845,6 +909,7 @@
     $('#hto').onchange = e => { f.hto = e.target.value; render(); };
     const hc = $('#hclr'); if (hc) hc.onclick = () => { Object.assign(f, { htype: '', hfrom: '', hto: '', hq: '' }); render(); };
     $('#sxlsx').onclick = exportStock;
+    $$('[data-allx]', el).forEach(b => b.onclick = () => exportAll(b));
     $$('[data-ev]', el).forEach(r => r.onclick = () => r.dataset.kind === 'tx' ? openTx(r.dataset.ev) : openStockItem(state.stock.items.find(i => i.ins.some(x => 'in:' + x.id === r.dataset.ev))?.key));
   }
 
@@ -1092,17 +1157,18 @@
     catch (e) { showErr(errId, e.message || 'Gagal menyimpan'); if (b) { b.disabled = false; b.textContent = b.dataset.l; } }
   }
 
-  async function exportStock() {
-    try {
-      const X = await xlsxLib(), s = state.stock, wb = X.utils.book_new();
-      const s1 = [['Nama Barang', 'Satuan', 'Kategori', 'Rak', 'Stok Awal', 'Masuk PR', 'Dipakai', 'Diserahkan (APD)', 'Dipinjam', 'Koreksi', 'Stok', 'Minimum', 'Status', 'Sisa PR', 'Catatan']]
+  function stockSheets(X) {
+    const s = state.stock;
+    const s1 = [['Nama Barang', 'Satuan', 'Kategori', 'Rak', 'Stok Awal', 'Masuk PR', 'Dipakai', 'Diserahkan (APD)', 'Dipinjam', 'Koreksi', 'Stok', 'Minimum', 'Status', 'Sisa PR', 'Catatan']]
         .concat(s.items.filter(i => !i.hidden).sort((a, b) => a.name.localeCompare(b.name, 'id')).map(i => [i.name, i.unit, i.kat, i.rak, i.awal, i.inQty, i.outQty, i.serahQty || 0, i.dipinjam, i.adj, i.stok, i.min, ST_LABEL[i.status][0], i.sisaPR, i.note]));
       const s2 = [['Tanggal', 'Jenis', 'Barang', 'Qty', 'Satuan', 'Orang', 'Keperluan / PR', 'Catatan', 'Batal', 'Dicatat oleh']]
         .concat(ledger().map(e => [e.date, TYPES[e.type][0], e.name, +e.qty, e.unit, e.person || e.supplier || '', e.purpose || e.prNo || '', e.note || e.reason || '', e.kind === 'tx' && isVoid(e) ? 'Ya: ' + e.voidReason : '', e.createdBy || '']));
       const s3 = [['Sejak', 'Barang', 'Sisa', 'Satuan', 'Peminjam', 'Keperluan', 'Hari']].concat(s.loans.map(l => [l.date, l.name, l.sisa, l.unit, l.person, l.purpose, daysSince(l.date)]));
-      X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(s1), 'STOK'); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(s2), 'RIWAYAT'); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(s3), 'DIPINJAM');
-      X.writeFile(wb, `Stok-Gudang-${today()}.xlsx`);
-    } catch (e) { toast(e.message || 'Export gagal', true); }
+    return [['STOK', mkSheet(X, s1)], ['RIWAYAT', mkSheet(X, s2)], ['DIPINJAM', mkSheet(X, s3)]];
+  }
+  async function exportStock() {
+    try { const X = await xlsxLib(); saveWb(X, stockSheets(X), `Stok-Gudang-${today()}.xlsx`); }
+    catch (e) { toast(e.message || 'Export gagal', true); }
   }
 
   // =====================================================================
@@ -1215,7 +1281,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.8.1';
+    $('#ver').textContent = 'v1.8.2';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }

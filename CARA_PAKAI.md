@@ -63,6 +63,16 @@ Kategori ditentukan dari kolom **Kategori** di tab MASTER (dropdown `Material` /
 
 **Tab MASTER adalah sumber utama.** Perubahan kategori, stok awal, rak, minimum, dan catatan dari aplikasi (Koreksi kategori, Edit barang, + Barang) **langsung ditulis ke tab MASTER**. Barang yang belum ada di MASTER (misalnya baru datang dari PR) otomatis ditambahkan sebagai baris baru. Sebaliknya, perubahan langsung di Sheet MASTER juga terbaca di aplikasi setelah **↻ Muat ulang**.
 
+## Export ke Excel
+| Tombol | Isi file |
+|---|---|
+| **Excel** (Daftar PR) | Item yang sedang tampil (ikut filter/pencarian) + sheet *Kendala* & *Foto SJ* untuk PR tersebut |
+| **Excel** (Kendala & action plan) | Daftar kendala sesuai filter |
+| **Excel** (Stok) | STOK, RIWAYAT, DIPINJAM |
+| **Excel lengkap** (ada di ketiga halaman) | Satu file: *Ringkasan* (status PR, kendala per PIC, stok) · Tracking PR · Kendala · Foto SJ · Stok · Riwayat · Dipinjam |
+
+Tanggal berupa tanggal Excel (bisa diurutkan/difilter), judul kolom sudah berfilter, kolom *Link foto SJ* bisa diklik ke foto di Drive.
+
 ## Untuk admin
 
 Klik **Login admin** di kanan atas.
