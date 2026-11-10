@@ -302,10 +302,10 @@
         <div class="prh" data-toggle="${esc(p.key)}" role="button" tabindex="0" aria-expanded="${isOpen}">
           <span class="prno">${esc(p.prNo)}</span>
           <div class="prmid"><span class="t">${esc(p.purpose || (all[0] && all[0].desc) || '—')}</span>
-            <span class="m"><span>${esc(fmtD(p.prDate))}${age !== null && openCnt ? ' · ' + age + ' hari' : ''}</span><span>${all.length} item${active && vis.length !== all.length ? ` (${vis.length} cocok)` : ''}</span><span>${openCnt ? openCnt + ' terbuka' : 'Selesai'}</span>${kAll.length ? `<span class="kbadge ${kL ? 'late' : ''}">⚠ ${kAll.length} kendala${kL ? ` · ${kL} terlambat` : ''}</span>` : ''}</span></div>
+            <span class="m"><span>${esc(fmtD(p.prDate))}${age !== null && openCnt ? ' · ' + age + ' hari' : ''}</span><span>${all.length} item${active && vis.length !== all.length ? ` (${vis.length} cocok)` : ''}</span><span>${openCnt ? openCnt + ' terbuka' : 'Selesai'}</span>${kAll.length ? `<span class="kbadge ${kL ? 'late' : ''}">⚠ ${kAll.length} kendala${kL ? ` · ${kL} terlambat` : ''}</span>` : ''}${fotoCount(p.key) ? `<span class="fbadge">📷 ${fotoCount(p.key)} foto SJ</span>` : ''}</span></div>
           <div style="display:flex;gap:8px;align-items:center"><span class="bar">${bar}</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></div>
         </div>
-        ${isOpen ? `${(state.pr.kByPR.get(p.key) || []).filter(kOpen).length || isAdmin() ? `<div class="prinfo">${kendalaChips(state.pr.kByPR.get(p.key) || [], 'Kendala seluruh PR')}${isAdmin() ? `<button class="btn sm" data-addkpr="${esc(p.key)}">+ Kendala seluruh PR</button>` : ''}</div>` : ''}${p.purpose || p.notes ? `<div class="prinfo"><div>${p.purpose ? '<b>Untuk:</b> ' + esc(p.purpose) : ''}${p.notes ? (p.purpose ? '\n' : '') + '<b>Note:</b> ' + esc(p.notes) : ''}</div></div>` : ''}
+        ${isOpen ? `${isAdmin() ? `<div class="pradm"><button class="btn sm" data-fotopr="${esc(p.key)}">📷 Foto surat jalan</button><button class="btn sm" data-bulkpr="${esc(p.key)}">Edit massal</button><button class="btn sm" data-additem="${esc(p.key)}">+ Item</button></div>` : ''}${fotoCount(p.key) ? `<div class="gal" data-gal="${esc(p.key)}"><span class="hint">Memuat foto…</span></div>` : ''}${(state.pr.kByPR.get(p.key) || []).filter(kOpen).length || isAdmin() ? `<div class="prinfo">${kendalaChips(state.pr.kByPR.get(p.key) || [], 'Kendala seluruh PR')}${isAdmin() ? `<button class="btn sm" data-addkpr="${esc(p.key)}">+ Kendala seluruh PR</button>` : ''}</div>` : ''}${p.purpose || p.notes ? `<div class="prinfo"><div>${p.purpose ? '<b>Untuk:</b> ' + esc(p.purpose) : ''}${p.notes ? (p.purpose ? '\n' : '') + '<b>Note:</b> ' + esc(p.notes) : ''}</div></div>` : ''}
         <div class="rows"><div class="row head"><div>No</div><div>Deskripsi</div><div>Qty</div><div>Release</div><div>PO</div><div>Supplier</div><div>Terima</div><div>Status</div></div>
         ${vis.map(i => prRow(i, prMap)).join('') || '<div class="row" style="cursor:default"><div></div><div class="dim">Tidak ada item yang cocok dengan filter.</div></div>'}</div>` : ''}
       </section>`);
@@ -320,7 +320,7 @@
         <select class="inp" id="prsup" style="width:auto;max-width:220px" aria-label="Supplier"><option value="">Semua supplier</option>${sups.map(s => `<option ${s === f.supplier ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
         <select class="inp" id="prsort" style="width:auto" aria-label="Urutan"><option value="desc" ${f.sort === 'desc' ? 'selected' : ''}>PR terbaru</option><option value="asc" ${f.sort === 'asc' ? 'selected' : ''}>PR terlama</option></select>
         <label class="check"><input type="checkbox" id="prdone" ${f.hideDone ? 'checked' : ''}>Sembunyikan Close & Cancel</label>
-        <button class="btn sm" id="prxlsx">Excel</button><button class="btn sm" id="prprint">Cetak / PDF</button>
+        <button class="btn sm" id="prxlsx">Excel</button><button class="btn sm" id="prprint">Cetak / PDF</button>${isAdmin() ? '<button class="btn sm primary" id="prNew">+ PR baru</button>' : ''}
       </div>
       <div class="resultline">${active || f.hideDone ? `Menampilkan ${shownItems} item di ${shownPR} PR` : ''}</div>
       <div style="display:flex;flex-direction:column;gap:8px">${out.join('') || '<div class="empty"><h3>Tidak ada yang cocok</h3>Coba kata kunci lain atau hapus filter.</div>'}</div>`;
@@ -338,6 +338,11 @@
     $$('[data-item]', v).forEach(r => r.onclick = () => openPRItem(r.dataset.item, prMap));
     $$('[data-addkpr]', v).forEach(b => b.onclick = e => { e.stopPropagation(); const p = prMap.get(b.dataset.addkpr); openKendalaForm(null, { prNo: p.prNo, itemNo: '', itemId: '', itemDesc: '' }); });
     $$('[data-kid]', v).forEach(b => b.onclick = e => { e.stopPropagation(); openKendala(b.dataset.kid); });
+    $$('[data-fotopr]', v).forEach(b => b.onclick = () => openFotoUpload(prMap.get(b.dataset.fotopr)));
+    $$('[data-bulkpr]', v).forEach(b => b.onclick = () => openBulkEdit(prMap.get(b.dataset.bulkpr)));
+    $$('[data-additem]', v).forEach(b => b.onclick = () => openAddItems(prMap.get(b.dataset.additem)));
+    const pn = $('#prNew'); if (pn) pn.onclick = openNewPR;
+    $$('[data-gal]', v).forEach(el => loadGallery(el, prMap.get(el.dataset.gal)));
     bindPrTabs(v);
   }
   function prRow(it, prMap) {
@@ -374,12 +379,214 @@
         ${kv('Untuk', esc(p.purpose))}${kv('Catatan PR', esc(p.notes))}
       </dl>
       <fieldset><legend>Kendala &amp; action plan</legend>${kendalaCards(kendalaOf(it).filter(k => k.status !== 'batal'))}</fieldset>
-      <p class="hint">Data PR dibaca dari Google Sheet Tracking PR (diubah di Sheet oleh tim logistik). Kendala & action plan disimpan di Master.</p>`,
-      foot: isAdmin() ? '<button class="btn" data-close="1">Tutup</button><button class="btn primary" id="kAdd">+ Kendala</button>' : '<button class="btn" data-close="1">Tutup</button>'
+      ${fotoCount(it.pr) ? `<fieldset><legend>Foto surat jalan ${esc(it.prNo)}</legend><div class="gal" id="itemGal"><span class="hint">Memuat foto…</span></div></fieldset>` : ''}
+      <p class="hint">Sumber: Google Sheet Tracking PR${isAdmin() ? ' — perubahan lewat <b>Edit item</b> langsung ditulis ke Sheet itu' : ''}. Kendala & foto disimpan di Master/Drive.</p>`,
+      foot: isAdmin() ? '<button class="btn sm" id="fAddI">📷 Foto SJ</button><button class="btn sm" id="kAdd">+ Kendala</button><button class="btn sm primary" id="iEdit">Edit item</button>' : '<button class="btn" data-close="1">Tutup</button>'
     });
+    const ig = $('#itemGal'); if (ig) loadGallery(ig, p);
+    const ie = $('#iEdit'); if (ie) ie.onclick = () => openEditItem(it);
+    const fa = $('#fAddI'); if (fa) fa.onclick = () => openFotoUpload(p, it);
     bindKendalaCards();
     const ka = $('#kAdd'); if (ka) ka.onclick = () => openKendalaForm(null, { prNo: it.prNo, itemNo: isEmpty(it.no) ? '' : String(it.no), itemId: it.id, itemDesc: it.desc });
   }
+  // =====================================================================
+  // EDIT TRACKING PR (admin) & FOTO SURAT JALAN
+  // =====================================================================
+  const PR_FIELDS = [
+    ['Cost Control', [['ccQty', 'Qty release', 'num'], ['ccUnit', 'Sat release', 'text'], ['balance', 'Balance', 'text'], ['releaseDate', 'Tgl release', 'date']]],
+    ['Procurement', [['poDate', 'Tgl PO', 'date'], ['poNo', 'No. PO', 'text'], ['eta', 'Estimasi kirim', 'date'], ['supplier', 'Supplier', 'text']]],
+    ['Kedatangan', [['recvQty', 'Qty terima', 'num'], ['recvUnit', 'Sat terima', 'text'], ['recvDate', 'Tgl terima', 'date'], ['sjNo', 'No. SJ', 'text']]],
+    ['Umum', [['reqDate', 'Tgl dibutuhkan', 'date'], ['status', 'Status', 'status'], ['remarks', 'Remarks', 'text']]]
+  ];
+  const PR_LABEL = Object.fromEntries(PR_FIELDS.flatMap(g => g[1]).map(f => [f[0], f[1]]));
+  const vOf = (it, f) => isEmpty(it[f]) ? '' : String(it[f]);
+  const showV = (f, v) => v === '' ? '<span class="dim">kosong</span>' : esc(/Date$/.test(f) || f === 'eta' ? fmtD(v, true) : v);
+  function fieldInput(id, f, type, v) {
+    if (type === 'status') return `<select class="inp" id="${id}">${STATUSES.map(s => `<option ${v === s.k ? 'selected' : ''}>${s.k}</option>`).join('')}</select>`;
+    return `<input class="inp" id="${id}" ${type === 'date' ? 'type="date"' : type === 'num' ? 'inputmode="decimal"' : ''} value="${esc(v)}" ${f === 'supplier' ? 'list="dlSup"' : ''}>`;
+  }
+  const supList = () => [...new Set(state.pr.items.map(i => i.supplier).filter(Boolean))].sort();
+  /** Saran status dari isian (tetap bisa diubah admin). */
+  function autoStatus(get, cur) {
+    if (cur === 'Cancel') return cur;
+    if (get('recvDate') && get('recvQty')) return 'Close';
+    if (get('poNo') || get('poDate')) return cur === 'Close' ? cur : 'Belum Terkirim';
+    if (get('releaseDate')) return ['Belum Release PR'].includes(cur) ? 'Belum PO' : cur;
+    return cur;
+  }
+  function prWriteHint() { return state.prCanWrite === false ? '<div class="katbar">Akun pemilik script belum terdeteksi sebagai Editor Sheet Tracking PR. Penyimpanan bisa ditolak — minta akses Editor ke pemilik Sheet.</div>' : ''; }
+
+  function openEditItem(it) {
+    openDrawer({
+      eyebrow: `Admin · Edit item · ${it.prNo} #${fmtN(it.no) || '–'}`, title: it.desc,
+      body: `${prWriteHint()}<p class="hint">Qty PR: <b>${esc(fmtN(it.qty))} ${esc(it.unit)}</b>. No, deskripsi, qty PR, dan No. PR diubah langsung di Sheet (dipakai sebagai kunci item).</p>
+        ${PR_FIELDS.map(([g, fs]) => `<fieldset><legend>${g}</legend><div class="grid2">${fs.map(([f, l, t]) => `<div class="f ${f === 'remarks' ? 'wide' : ''}"><label for="pe_${f}">${l}</label>${fieldInput('pe_' + f, f, t, vOf(it, f))}</div>`).join('')}</div></fieldset>`).join('')}
+        <datalist id="dlSup">${supList().map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+        <span class="hint" id="peAuto"></span><div id="peErr"></div>`,
+      foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="peSave">Simpan ke Sheet</button>'
+    });
+    let statusTouched = false;
+    $('#pe_status').onchange = () => { statusTouched = true; };
+    ['recvDate', 'recvQty', 'poNo', 'poDate', 'releaseDate'].forEach(f => { $('#pe_' + f).addEventListener('change', () => {
+      if (statusTouched) return; const nx = autoStatus(x => val('pe_' + x), it.status);
+      if (nx !== $('#pe_status').value) { $('#pe_status').value = nx; $('#peAuto').textContent = 'Status disarankan: ' + nx + ' (bisa diubah).'; }
+    }); });
+    $('#peSave').onclick = () => {
+      const fields = {}, orig = {};
+      PR_FIELDS.forEach(([, fs]) => fs.forEach(([f]) => { const nv = val('pe_' + f), ov = vOf(it, f); if (String(nv) !== String(ov)) { fields[f] = nv; orig[f] = it[f]; } }));
+      if (!Object.keys(fields).length) { showErr('peErr', 'Tidak ada perubahan.'); return; }
+      submit('peSave', 'peErr', () => apiPost('editPR', { changes: [{ id: it.id, fields, orig }] }), 'Tracking PR diperbarui',
+        { title: 'Simpan perubahan ke Sheet Tracking PR?', rows: [['Item', esc(`${it.prNo} #${fmtN(it.no)} · ${it.desc}`)]].concat(Object.keys(fields).map(f => [PR_LABEL[f], `<s class="dim">${showV(f, vOf(it, f))}</s> → <b>${showV(f, fields[f])}</b>`])),
+          note: 'Ditulis langsung ke Sheet. Jika sel sudah diubah orang lain sejak form dibuka, penyimpanan dibatalkan.' })
+        .then(() => { const r = fields.recvDate && fields.sjNo && !$('#peSave'); if (r && isAdmin()) setTimeout(() => toastAction(`Foto surat jalan ${fields.sjNo} sekarang?`, () => openFotoUpload(state.pr.prs.find(p => p.key === it.pr), it, fields.sjNo)), 400); });
+    };
+  }
+  function toastAction(msg, fn) {
+    const r = $('#toastRoot'); r.innerHTML = `<div class="toast">${esc(msg)} <button class="btn sm" id="taGo" style="margin-left:8px">Ya</button></div>`;
+    $('#taGo').onclick = () => { r.innerHTML = ''; fn(); }; setTimeout(() => { r.innerHTML = ''; }, 8000);
+  }
+
+  function openBulkEdit(p) {
+    const items = state.pr.items.filter(i => i.pr === p.key);
+    const BF = [['releaseDate', 'Tgl release', 'date'], ['poDate', 'Tgl PO', 'date'], ['poNo', 'No. PO', 'text'], ['eta', 'Estimasi kirim', 'date'], ['supplier', 'Supplier', 'text'], ['recvDate', 'Tgl terima', 'date'], ['sjNo', 'No. SJ', 'text'], ['status', 'Status', 'status']];
+    openDrawer({
+      eyebrow: `Admin · Edit massal · ${p.prNo}`, title: 'Isi sekali untuk beberapa item',
+      body: `${prWriteHint()}<fieldset><legend>Item (${items.length})</legend><label class="check"><input type="checkbox" id="beAll"> Pilih semua</label>
+          ${items.map(i => `<label class="check" style="white-space:normal"><input type="checkbox" class="beI" value="${esc(i.id)}" ${i.status !== 'Close' && i.status !== 'Cancel' ? 'checked' : ''}> #${esc(fmtN(i.no))} ${esc(i.desc)} <span class="pill ${SCLS[i.status]}">${esc(i.status)}</span></label>`).join('')}</fieldset>
+        <fieldset><legend>Nilai baru (kosong = tidak diubah)</legend><div class="grid2">${BF.map(([f, l, t]) => `<div class="f"><label for="be_${f}">${l}</label>${t === 'status' ? `<select class="inp" id="be_${f}"><option value="">— tidak diubah —</option>${STATUSES.map(s => `<option>${s.k}</option>`).join('')}</select>` : fieldInput('be_' + f, f, t, '')}</div>`).join('')}</div>
+          <span class="hint">Qty terima tidak diisi massal karena berbeda per item — isi lewat Edit item.</span></fieldset>
+        <datalist id="dlSup">${supList().map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist><div id="beErr"></div>`,
+      foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="beSave">Simpan ke Sheet</button>'
+    });
+    $('#beAll').onchange = e => $$('.beI').forEach(c => { c.checked = e.target.checked; });
+    $('#beSave').onclick = () => {
+      const ids = $$('.beI').filter(c => c.checked).map(c => c.value), set = {};
+      BF.forEach(([f]) => { const v = val('be_' + f); if (v !== '') set[f] = v; });
+      if (!ids.length) { showErr('beErr', 'Pilih minimal 1 item.'); return; }
+      if (!Object.keys(set).length) { showErr('beErr', 'Isi minimal 1 nilai baru.'); return; }
+      const changes = ids.map(id => { const it = items.find(i => i.id === id), orig = {}; Object.keys(set).forEach(f => { orig[f] = it[f]; }); return { id, fields: set, orig }; });
+      submit('beSave', 'beErr', () => apiPost('editPR', { changes }), `${ids.length} item diperbarui`,
+        { title: `Ubah ${ids.length} item ${p.prNo}?`, rows: Object.keys(set).map(f => [PR_LABEL[f], `<b>${showV(f, set[f])}</b>`]).concat([['Item', ids.map(id => { const it = items.find(i => i.id === id); return esc('#' + fmtN(it.no) + ' ' + it.desc); }).slice(0, 10).join('<br>') + (ids.length > 10 ? '<br>…' : '')]]),
+          note: 'Ditulis langsung ke Sheet Tracking PR.' });
+    };
+  }
+
+  function itemLinesForm(prefix) {
+    let n = 1;
+    const line = i => `<div class="nline" data-l="${i}"><div class="f"><label for="${prefix}d${i}">Deskripsi</label><input class="inp" id="${prefix}d${i}"></div>
+      <div class="f"><label for="${prefix}q${i}">Qty</label><input class="inp" id="${prefix}q${i}" inputmode="decimal"></div>
+      <div class="f"><label for="${prefix}u${i}">Sat</label><input class="inp" id="${prefix}u${i}" list="dlUnit"></div>
+      <div class="f wide"><label for="${prefix}s${i}">Spesifikasi <span class="dim">(opsional, 1 baris per poin)</span></label><textarea class="inp" id="${prefix}s${i}" rows="1"></textarea></div></div>`;
+    return {
+      html: () => `<div id="${prefix}lines">${line(0)}</div><button type="button" class="btn sm ghost" id="${prefix}more">+ Baris item</button><datalist id="dlUnit">${['Pcs', 'Unit', 'Set', 'Lot', 'Meter', 'Roll', 'Batang', 'Lembar', 'Kg', 'Box', 'Pasang', 'Lusin', 'Ls'].map(u => `<option value="${u}"></option>`).join('')}</datalist>`,
+      bind: () => { $('#' + prefix + 'more').onclick = () => { $('#' + prefix + 'lines').insertAdjacentHTML('beforeend', line(n++)); }; },
+      read: () => $$('#' + prefix + 'lines .nline').map(el => { const i = el.dataset.l; return { desc: val(prefix + 'd' + i), qty: val(prefix + 'q' + i), unit: val(prefix + 'u' + i), spec: val(prefix + 's' + i) }; }).filter(x => x.desc || x.qty || x.unit)
+    };
+  }
+  function openAddItems(p) {
+    const L = itemLinesForm('ai');
+    openDrawer({
+      eyebrow: `Admin · Tambah item · ${p.prNo}`, title: p.purpose || p.prNo,
+      body: `${prWriteHint()}<p class="hint">Item baru disisipkan di bawah item terakhir ${esc(p.prNo)} di Sheet, status <b>Belum Release PR</b>.</p>${L.html()}
+        <div class="f"><label for="aiReq">Tgl dibutuhkan <span class="dim">(opsional)</span></label><input class="inp" type="date" id="aiReq"></div><div id="aiErr"></div>`,
+      foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="aiSave">Tambah ke Sheet</button>'
+    });
+    L.bind();
+    $('#aiSave').onclick = () => { const items = L.read(); if (!items.length) { showErr('aiErr', 'Isi minimal 1 item.'); return; }
+      submit('aiSave', 'aiErr', () => apiPost('addPRItems', { prNo: p.prNo, items, reqDate: val('aiReq') }), `${items.length} item ditambahkan ke ${p.prNo}`,
+        { title: `Tambah ${items.length} item ke ${p.prNo}?`, rows: [['Item', items.map(x => `<b>${esc(x.qty)} ${esc(x.unit)}</b> ${esc(x.desc)}${x.spec ? `<br><span class="dim">${esc(x.spec)}</span>` : ''}`).join('<br>')], ['Dibutuhkan', esc(val('aiReq') ? fmtD(val('aiReq'), true) : '')]], note: 'Ditulis langsung ke Sheet Tracking PR.' }); };
+  }
+  async function openNewPR() {
+    const L = itemLinesForm('np');
+    openDrawer({ eyebrow: 'Admin · PR baru', title: 'Buat PR baru', body: '<div class="loading">Mengambil nomor PR berikutnya…</div>' });
+    let nx = ''; try { const r = await apiPost('nextPRNo'); nx = r.prNo; state.prCanWrite = r.canWrite; } catch (e) { /* isi manual */ }
+    openDrawer({
+      eyebrow: 'Admin · PR baru', title: 'Buat PR baru',
+      body: `${prWriteHint()}<div class="grid2"><div class="f"><label for="npNo">No. PR</label><input class="inp mono" id="npNo" value="${esc(nx)}"></div>
+          <div class="f"><label for="npDate">Tanggal PR</label><input class="inp" type="date" id="npDate" value="${today()}"></div>
+          <div class="f"><label for="npReq">Tgl dibutuhkan</label><input class="inp" type="date" id="npReq"></div>
+          <div class="f"><label for="npFor">Untuk / keperluan</label><input class="inp" id="npFor" placeholder="mis. pemasangan pagar"></div>
+          <div class="f wide"><label for="npNote">Catatan</label><input class="inp" id="npNote"></div></div>
+        <fieldset><legend>Item</legend>${L.html()}</fieldset><div id="npErr"></div>`,
+      foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="npSave">Buat PR di Sheet</button>'
+    });
+    L.bind();
+    $('#npSave').onclick = () => { const items = L.read(); if (!items.length) { showErr('npErr', 'Isi minimal 1 item.'); return; }
+      const body = { prNo: val('npNo'), prDate: val('npDate'), reqDate: val('npReq'), purpose: val('npFor'), note: val('npNote'), items };
+      submit('npSave', 'npErr', () => apiPost('addPR', body), `${body.prNo || 'PR baru'} dibuat`,
+        { title: `Buat ${body.prNo || 'PR baru'}?`, rows: [['Tanggal PR', esc(fmtD(body.prDate, true))], ['Dibutuhkan', esc(body.reqDate ? fmtD(body.reqDate, true) : '')], ['Untuk', esc(body.purpose)], ['Catatan', esc(body.note)], ['Item', items.map(x => `<b>${esc(x.qty)} ${esc(x.unit)}</b> ${esc(x.desc)}`).join('<br>')]], note: 'Ditambahkan di akhir log book Sheet Tracking PR, status Belum Release PR.' }); };
+  }
+
+  // ---------- foto surat jalan ----------
+  const fotoCount = key => (state.pr && state.pr.foto || []).filter(f => f.prKey === key).length;
+  state.thumbs = state.thumbs || {};
+  async function loadGallery(el, p) {
+    if (!p) return;
+    let list = state.thumbs[p.key];
+    if (!list) { try { list = state.thumbs[p.key] = await apiPost('fotoThumbs', { prNo: p.prNo }); } catch (e) { el.innerHTML = `<span class="hint">${esc(e.message || 'Foto gagal dimuat')}</span>`; return; } }
+    if (!el.isConnected) return;
+    el.innerHTML = list.map(f => `<button class="th" data-fid="${esc(f.id)}" title="${esc((f.sjNo ? 'SJ ' + f.sjNo + ' · ' : '') + fmtDT(+f.uploadedAt))}">${f.thumb ? `<img alt="Foto SJ ${esc(f.sjNo)}" src="data:image/jpeg;base64,${f.thumb}">` : '📷'}<span>${esc(f.sjNo ? 'SJ ' + f.sjNo : fmtD(f.folder))}</span></button>`).join('') || '<span class="hint">Belum ada foto.</span>';
+    $$('[data-fid]', el).forEach(b => b.onclick = e => { e.stopPropagation(); openFotoViewer(list, b.dataset.fid, p); });
+  }
+  const fullCache = {};
+  async function openFotoViewer(list, id, p) {
+    const f = list.find(x => x.id === id), i = list.indexOf(f);
+    const root = document.createElement('div'); root.className = 'pv';
+    root.innerHTML = `<div class="pv-bar"><span>${esc(p.prNo)}${f.sjNo ? ' · SJ ' + esc(f.sjNo) : ''} · ${esc(fmtDT(+f.uploadedAt))}${f.note ? ' · ' + esc(f.note) : ''}</span><span>${i > 0 ? '<button class="btn sm" data-pv="-1">‹</button>' : ''}${i < list.length - 1 ? '<button class="btn sm" data-pv="1">›</button>' : ''}${isAdmin() ? '<button class="btn sm danger" id="pvDel">Hapus</button>' : ''}<button class="btn sm" id="pvX">Tutup ✕</button></span></div>
+      <div class="pv-img">${f.thumb ? `<img alt="" src="data:image/jpeg;base64,${f.thumb}" style="filter:blur(2px)">` : ''}<span class="hint pv-load">Memuat foto ukuran penuh…</span></div>`;
+    document.body.appendChild(root);
+    const close = () => { root.remove(); document.removeEventListener('keydown', key, true); };
+    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } if (e.key === 'ArrowRight' && i < list.length - 1) { close(); openFotoViewer(list, list[i + 1].id, p); } if (e.key === 'ArrowLeft' && i > 0) { close(); openFotoViewer(list, list[i - 1].id, p); } };
+    document.addEventListener('keydown', key, true);
+    root.querySelector('#pvX').onclick = close;
+    root.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { close(); openFotoViewer(list, list[i + +b.dataset.pv].id, p); });
+    const del = root.querySelector('#pvDel'); if (del) del.onclick = async () => {
+      const why = prompt('Alasan menghapus foto ini? (file dipindah ke Sampah Drive)'); if (!why) return;
+      try { await apiPost('hapusFoto', { id, reason: why }); delete state.thumbs[p.key]; close(); toast('Foto dihapus'); await loadPR(true); } catch (e) { toast(e.message, true); }
+    };
+    try {
+      const full = fullCache[id] || (fullCache[id] = await apiPost('fotoFull', { id }));
+      if (root.isConnected) root.querySelector('.pv-img').innerHTML = `<img alt="Foto surat jalan" src="data:${esc(full.mime)};base64,${full.data}">`;
+    } catch (e) { const l = root.querySelector('.pv-load'); if (l) l.textContent = e.message || 'Gagal memuat'; }
+  }
+  /** Perkecil foto di HP sebelum dikirim: sisi terpanjang 1600 px (JPEG 0.8) + thumbnail 320 px. */
+  function shrink(file, max, q) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => { const s = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', q).split(',')[1]); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('File bukan gambar')); };
+      img.src = url;
+    });
+  }
+  function openFotoUpload(p, it, sjPreset) {
+    const sjs = [...new Set(state.pr.items.filter(i => i.pr === p.key).map(i => i.sjNo).filter(Boolean))];
+    let shots = [];
+    openDrawer({
+      eyebrow: `Admin · Foto surat jalan · ${p.prNo}`, title: p.purpose || p.prNo,
+      body: `<label class="btn primary camera"><input type="file" id="fsIn" accept="image/*" capture="environment" multiple hidden>📷 Ambil / pilih foto</label>
+        <div class="gal" id="fsPrev"><span class="hint">Belum ada foto. Bisa beberapa foto (maks 8).</span></div>
+        <div class="grid2"><div class="f"><label for="fsSj">No. surat jalan</label><input class="inp" id="fsSj" list="dlSj" value="${esc(sjPreset || (it && it.sjNo) || (sjs.length === 1 ? sjs[0] : ''))}"><datalist id="dlSj">${sjs.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+          <div class="f"><label for="fsNote">Catatan</label><input class="inp" id="fsNote" placeholder="${it ? esc(it.desc) : 'mis. pengiriman ke-1'}"></div></div>
+        <span class="hint">Disimpan ke Google Drive: <b>LoGistic Tracking / Surat Jalan / ${esc(today())}</b>. Foto tidak dibagikan publik.</span><div id="fsErr"></div>`,
+      foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="fsSave">Unggah</button>'
+    });
+    const draw = () => { $('#fsPrev').innerHTML = shots.length ? shots.map((s, i) => `<span class="th"><img alt="" src="data:image/jpeg;base64,${s.thumb}"><button class="btn sm ghost" data-rmf="${i}" aria-label="Hapus foto">✕</button></span>`).join('') : '<span class="hint">Belum ada foto.</span>';
+      $$('[data-rmf]').forEach(b => b.onclick = () => { shots.splice(+b.dataset.rmf, 1); draw(); }); };
+    $('#fsIn').onchange = async e => {
+      const files = [...e.target.files].slice(0, 8 - shots.length); $('#fsPrev').innerHTML = '<span class="hint">Memproses foto…</span>';
+      for (const f of files) { try { shots.push({ data: await shrink(f, 1600, 0.8), thumb: await shrink(f, 320, 0.6), mime: 'image/jpeg' }); } catch (x) { showErr('fsErr', x.message); } }
+      e.target.value = ''; draw();
+    };
+    $('#fsSave').onclick = () => {
+      if (!shots.length) { showErr('fsErr', 'Ambil minimal 1 foto.'); return; }
+      const kb = Math.round(shots.reduce((a, s) => a + s.data.length * 0.75, 0) / 1024);
+      submit('fsSave', 'fsErr', async () => { await apiPost('uploadSJ', { prNo: p.prNo, sjNo: val('fsSj'), note: val('fsNote'), items: it ? String(it.no) : '', files: shots }); delete state.thumbs[p.key]; }, `${shots.length} foto surat jalan tersimpan`,
+        { title: `Unggah ${shots.length} foto surat jalan?`, rows: [['PR', esc(p.prNo)], ['No. SJ', esc(val('fsSj'))], ['Catatan', esc(val('fsNote'))], ['Foto', `<span class="gal">${shots.map(s => `<span class="th"><img alt="" src="data:image/jpeg;base64,${s.thumb}"></span>`).join('')}</span><span class="dim">±${kb} KB</span>`], ['Folder Drive', `LoGistic Tracking / Surat Jalan / ${esc(today())}`]], ok: 'Ya, unggah' });
+    };
+  }
+
   function prTabs() {
     const n = (state.pr && state.pr.kendala || []).filter(kOpen).length, l = (state.pr && state.pr.kendala || []).filter(kLate).length;
     return `<div class="tabs stok-tabs" role="tablist"><a class="tab ${state.prSub !== 'kendala' ? 'on' : ''}" href="#pr">Daftar PR</a><a class="tab ${state.prSub === 'kendala' ? 'on' : ''}" href="#pr/kendala">Kendala &amp; action plan <span class="cnt ${l ? 'late' : ''}">${n}</span></a></div>`;
@@ -937,7 +1144,7 @@
   async function renderSettings(v) {
     v.innerHTML = '<div class="loading">Memuat pengaturan…</div>';
     let st, admins;
-    try { [st, admins] = await Promise.all([apiPost('getSettings'), apiPost('listAdmins')]); }
+    try { [st, admins] = await Promise.all([apiPost('getSettings'), apiPost('listAdmins')]); state.prCanWrite = st.prCanWrite; }
     catch (e) { v.innerHTML = errView(e, 'retrySet'); const r = $('#retrySet'); if (r) r.onclick = () => render(); return; }
     if (state.route !== 'pengaturan') return;
     const srcCard = (label, s) => s ? `<div class="src"><b>${esc(label)}: ${esc(s.name || s.id)}</b>${s.error ? `<span class="late">${esc(s.error)}</span>` : `<span class="dim">${esc(s.type)} · diubah ${esc(fmtDT(s.updated))}</span><a href="${esc(s.url)}" target="_blank" rel="noopener">Buka file ↗</a>`}</div>` : `<div class="src"><b>${esc(label)}</b><span class="dim">Belum diatur</span></div>`;
@@ -947,7 +1154,7 @@
         ${st.bound
           ? `<p class="hint">Script terpasang di <b>${esc(st.master ? st.master.name : 'Master')}</b>. Master Stok dan transaksi (tab TX, ITEMS, LOG) ada di file itu. Tracking PR hanya <b>dibaca</b> dari link di bawah, lalu disalin ke tab <b>PR_DATA</b> di Master setiap kali berubah.</p>`
           : '<p class="hint">Tempel link Google Sheet. Tracking PR & Master Stok hanya dibaca. Transaksi stok ditulis ke <b>Data Sheet</b> (dibuat otomatis bila dikosongkan).</p>'}
-        ${srcCard('Tracking PR (lihat saja)', st.pr)}${srcCard(st.bound ? 'Master (file script ini)' : 'Master Stok', st.master)}${st.bound ? '' : srcCard('Data Sheet aplikasi', st.db)}
+        ${srcCard('Tracking PR', st.pr)}${st.pr ? `<div class="${st.prCanWrite ? 'ok-box' : 'katbar'}">${st.prCanWrite ? '✔ Aplikasi bisa menulis ke Sheet Tracking PR (edit item, tambah item/PR).' : 'Akun pemilik script belum terdeteksi sebagai <b>Editor</b> Sheet Tracking PR. Edit & tambah PR dari aplikasi akan ditolak sampai pemilik Sheet memberi akses Editor.'}</div>` : ''}${srcCard(st.bound ? 'Master (file script ini)' : 'Master Stok', st.master)}${st.bound ? '' : srcCard('Data Sheet aplikasi', st.db)}
         ${st.pr ? `<div class="src"><b>Salinan PR di Master (tab PR_DATA)</b><span class="dim">${st.prCopiedAt ? 'Terakhir disalin ' + esc(fmtDT(st.prCopiedAt)) : 'Belum pernah disalin'} · sinkron otomatis ${st.autoSync ? '<b>aktif (10 menit)</b>' : 'mati'}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" id="cSync">Sinkron sekarang</button><button class="btn sm" id="cAuto">${st.autoSync ? 'Matikan' : 'Nyalakan'} sinkron otomatis</button></div></div>` : ''}
         <div class="f"><label for="cPr">Link Tracking PR</label><input class="inp" id="cPr" placeholder="https://docs.google.com/spreadsheets/d/…" value="${st.pr ? esc(st.pr.url || '') : ''}"></div>
@@ -1007,7 +1214,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.6.1';
+    $('#ver').textContent = 'v1.8.0';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }

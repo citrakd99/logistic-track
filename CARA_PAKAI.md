@@ -12,6 +12,19 @@ Jika admin mengaktifkan **PIN viewer** (Pengaturan → PIN viewer), aplikasi mem
 - **Excel** mengunduh item yang sedang tampil. **Cetak / PDF** membuka dialog cetak; pilih *Simpan sebagai PDF*.
 - Data PR **tidak bisa diubah di aplikasi**. Perubahan dilakukan di Google Sheet Tracking PR oleh tim logistik, lalu muncul di aplikasi begitu tombol **↻ Muat ulang** ditekan. Tanpa menekan tombol itu, data diperbarui otomatis tiap 5 menit.
 
+### Edit Tracking PR dari aplikasi (admin)
+Syarat: akun pemilik script (ahadaja@gmail.com) adalah **Editor** di Sheet Tracking PR — status terlihat di **Pengaturan → Sumber data**.
+- **Edit item:** Daftar PR → buka item → **Edit item**. Kolom Cost Control (qty/sat release, balance, tgl release), Procurement (tgl PO, No. PO, estimasi kirim, supplier), Kedatangan (qty/sat terima, tgl terima, No. SJ), tgl dibutuhkan, status, remarks. Status disarankan otomatis (mis. tgl terima + qty terima → *Close*), tetap bisa diubah.
+- **Edit massal:** buka PR → **Edit massal** → centang item → isi sekali (mis. Tgl terima + No. SJ untuk 1 surat jalan).
+- **+ Item:** buka PR → **+ Item** — disisipkan di bawah item terakhir PR itu. **+ PR baru:** tombol di toolbar Daftar PR — nomor PR berikutnya disarankan otomatis, ditambahkan di akhir log book.
+- Konfirmasi menampilkan nilai lama → baru. Jika sel yang sama sudah diubah orang lain di Sheet sejak form dibuka, penyimpanan **dibatalkan** dengan pesan nilai terbarunya (tidak menimpa pekerjaan orang lain).
+- No, Deskripsi, Qty PR, Tgl PR, dan No. PR tetap diubah di Sheet (dipakai sebagai kunci item & kendala).
+
+### Foto surat jalan
+- Buka PR → **📷 Foto surat jalan** (atau dari detail item → **📷 Foto SJ**; setelah mengisi Tgl terima + No. SJ aplikasi juga menawarkan foto). Di HP tombol **Ambil / pilih foto** membuka kamera; bisa beberapa foto (maks 8 sekali kirim).
+- Foto diperkecil otomatis di HP (±300–500 KB) lalu disimpan ke Google Drive akun pemilik script: **LoGistic Tracking / Surat Jalan / <tanggal upload>** — folder per hari dibuat otomatis. Nama file: `SJ_<PR>_<No SJ>_<jam>_<n>.jpg`.
+- Foto **tidak dibagikan publik**; tampil di aplikasi (badge 📷 di PR, galeri, ketuk untuk ukuran penuh) untuk admin & pemegang PIN. Admin bisa **Hapus** (file pindah ke Sampah Drive, bisa dipulihkan 30 hari).
+
 ### Kendala & action plan (Tracking PR)
 Untuk item/PR yang tersendat, admin mencatat **Kenapa** (kendala) · **Apa** (action plan) · **Siapa** (PIC) · **Kapan** (tanggal komitmen).
 - **PIC** dipilih dari dropdown (awal: Fitri, Aqsha, Ahad, Anggun). Pilih **+ Tambah PIC baru…** untuk mengetik nama baru, yang otomatis masuk daftar. Atur daftar (tambah / hapus / urutan) di **Pengaturan → Daftar PIC**.

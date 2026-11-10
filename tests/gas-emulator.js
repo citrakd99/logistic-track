@@ -17,17 +17,18 @@ class Sheet {
   setColumnWidth() { }
   getProtections() { return this.prot ? [this.prot] : []; }
   protect() { const p = { setDescription: () => p, setWarningOnly: (w) => { p.warning = w; return p; } }; this.prot = p; return p; }
-  insertRowsAfter(_, n) { this.maxRows += n; }
+  insertRowsAfter(r, n) { if (this.readOnly) throw new Error('You do not have permission to access the requested document.'); if (r < this.data.length) this.data.splice(r, 0, ...Array.from({ length: n }, () => [])); this.maxRows += n; }
   setFrozenRows() { }
-  getDataRange() { const lr = this.getLastRow(), lc = Math.max(1, ...this.data.map(r => r.length)); return this.getRange(1, 1, Math.max(1, lr), lc); }
+  getDataRange() { const lr = this.getLastRow(), lc = Math.max(1, ...Array.from(this.data, r => (r || []).length)); return this.getRange(1, 1, Math.max(1, lr), lc); }
   getRange(r, c, nr = 1, nc = 1) {
     const sh = this;
     if (r + nr - 1 > sh.maxRows) throw new Error('Range di luar batas sheet');
     return {
       getSheet() { return sh; }, getRow() { return r; }, getColumn() { return c; }, getNumRows() { return nr; },
       getValues() { const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const v = (sh.data[r - 1 + i] || [])[c - 1 + j]; row.push(v === undefined || v === null ? '' : v); } out.push(row); } return out; },
-      setValues(v) { if (v.length !== nr || v[0].length !== nc) throw new Error('Ukuran setValues tidak cocok'); for (let i = 0; i < nr; i++) { sh.data[r - 1 + i] = sh.data[r - 1 + i] || []; for (let j = 0; j < nc; j++) sh.data[r - 1 + i][c - 1 + j] = v[i][j]; } return this; },
-      setValue(v) { sh.data[r - 1] = sh.data[r - 1] || []; sh.data[r - 1][c - 1] = v; return this; },
+      copyTo() { return this; },
+      setValues(v) { if (sh.readOnly) throw new Error('You do not have permission to access the requested document.'); if (v.length !== nr || v[0].length !== nc) throw new Error('Ukuran setValues tidak cocok'); for (let i = 0; i < nr; i++) { sh.data[r - 1 + i] = sh.data[r - 1 + i] || []; for (let j = 0; j < nc; j++) sh.data[r - 1 + i][c - 1 + j] = v[i][j]; } return this; },
+      setValue(v) { if (sh.readOnly) throw new Error('You do not have permission to access the requested document.'); sh.data[r - 1] = sh.data[r - 1] || []; sh.data[r - 1][c - 1] = v; return this; },
       setDataValidation(rule) { (sh.validations = sh.validations || {})[c] = rule; if (c === 3) sh.validation = { row: r, col: c, n: nr, rule }; return this; },
       setFontWeight() { return this; }, setNumberFormat() { return this; }
     };
@@ -45,6 +46,15 @@ class Spreadsheet {
 
 function createEnv(opts = {}) {
   const files = {};   // id -> {name, mime, updated, ss?, rows?}
+  const folders = {};
+  function mkFolder(id, name, parent) {
+    if (folders[id]) return folders[id];
+    const f = { id, name, parent, getId: () => id, getName: () => name, isTrashed: () => false,
+      getFoldersByName: n => { const hit = Object.values(folders).filter(x => x.parent === id && x.name === n); let i = 0; return { hasNext: () => i < hit.length, next: () => hit[i++] }; },
+      createFolder: n => mkFolder('fold' + Object.keys(folders).length, n, id),
+      createFile: blob => { const fid = 'file' + Object.keys(files).length + crypto.randomUUID().slice(0, 4); files[fid] = { name: blob.getName(), mime: blob.getContentType(), updated: Date.now(), bytes: blob.getBytes(), folder: id }; return { getId: () => fid, getUrl: () => 'https://drive.google.com/file/d/' + fid + '/view', setDescription() { } }; } };
+    folders[id] = f; return f;
+  }
   const props = {}, cache = new Map();
   const env = {
     MimeType: { GOOGLE_SHEETS: 'application/vnd.google-apps.spreadsheet' },
@@ -60,26 +70,29 @@ function createEnv(opts = {}) {
       remove: k => cache.delete(k)
     }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => { }, releaseLock: () => { } }) },
-    Session: { getScriptTimeZone: () => 'Asia/Jakarta' },
+    Session: { getScriptTimeZone: () => 'Asia/Jakarta', getEffectiveUser: () => ({ getEmail: () => 'owner@x.co' }) },
     Utilities: {
       Charset: { UTF_8: 'utf8' },
       getUuid: () => crypto.randomUUID(),
       computeHmacSha256Signature: (v, k) => toSigned(crypto.createHmac('sha256', toBuf(k)).update(toBuf(v)).digest()),
+      base64Decode: s => toSigned(Buffer.from(String(s), 'base64')),
       base64Encode: b => toBuf(b).toString('base64'),
       base64EncodeWebSafe: b => toBuf(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
       base64DecodeWebSafe: s => toSigned(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')),
-      newBlob: x => ({ getBytes: () => toSigned(toBuf(x)), getDataAsString: () => toBuf(x).toString('utf8') }),
+      newBlob: (x, mime, name) => ({ getBytes: () => toSigned(toBuf(x)), getDataAsString: () => toBuf(x).toString('utf8'), getContentType: () => mime, getName: () => name }),
       formatDate: (d, tz, fmt) => {
         if (typeof tz !== 'string' || !tz) throw new Error('Argumen tak valid: timeZone. Seharusnya bertipe: String');
-        const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d).map(x => [x.type, x.value]));
-        return String(fmt).replace('yyyy', p.year).replace('MM', p.month).replace('dd', p.day).replace('HH', p.hour).replace('mm', p.minute);
+        const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(d).map(x => [x.type, x.value]));
+        return String(fmt).replace('yyyy', p.year).replace('MM', p.month).replace('dd', p.day).replace('HH', p.hour).replace('mm', p.minute).replace('ss', p.second);
       }
     },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ content: s, setMimeType() { return this; } }) },
     DriveApp: {
-      getRootFolder: () => ({}),
+      Permission: { EDIT: 'EDIT', VIEW: 'VIEW' }, Access: { PRIVATE: 'PRIVATE', ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
+      getRootFolder: () => mkFolder('root', 'My Drive'),
+      getFolderById: id => { if (!folders[id]) throw new Error('no folder'); return folders[id]; },
       getFileById: id => { const f = files[id]; if (!f) throw new Error('File not found: ' + id);
-        return { getName: () => f.name, getMimeType: () => f.mime, getLastUpdated: () => new Date(f.updated), getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getBlob: () => ({ rows: f.rows }), setTrashed: () => { delete files[id]; } }; }
+        return { getOwner: () => ({ getEmail: () => f.owner || 'owner@x.co' }), getEditors: () => (f.editors || []).map(e => ({ getEmail: () => e })), getSharingPermission: () => 'VIEW', getSharingAccess: () => 'ANYONE_WITH_LINK', getName: () => f.name, getMimeType: () => f.mime, getLastUpdated: () => new Date(f.updated), getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getBlob: () => f.bytes ? { getBytes: () => f.bytes, getContentType: () => f.mime, rows: f.rows } : { rows: f.rows }, setTrashed: () => { f.trashed = true; } }; }
     },
     Drive: { Files: {
       create: (res, blob) => { const id = 'tmp' + crypto.randomUUID().replace(/-/g, ''); files[id] = { name: res.name, mime: res.mimeType, updated: Date.now(), ss: new Spreadsheet(id, res.name, [new Sheet('MASTER', blob.rows)]) }; return { id }; },
@@ -91,6 +104,7 @@ function createEnv(opts = {}) {
       newTrigger: fn => { const mk = () => ({ create: () => { const t = { getHandlerFunction: () => fn }; tr.push(t); return t; } }); return { timeBased: () => ({ everyMinutes: mk }), forSpreadsheet: () => ({ onEdit: mk }) }; }
     }; })(),
     SpreadsheetApp: {
+      flush: () => { }, CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT' },
       ProtectionType: { SHEET: 'SHEET' },
       newDataValidation: () => { const rule = {}; const b = { requireDate: () => { rule.date = true; return b; }, requireValueInList: (l) => { rule.list = l.slice(); return b; }, setAllowInvalid: (x) => { rule.allowInvalid = x; return b; }, setHelpText: () => b, build: () => rule }; return b; },
       getActiveSpreadsheet: () => (opts.boundId && files[opts.boundId] ? files[opts.boundId].ss : null),
@@ -100,7 +114,7 @@ function createEnv(opts = {}) {
     }
   };
   // helper untuk test
-  env.__files = files; env.__props = props; env.__cache = cache;
+  env.__files = files; env.__folders = folders; env.__props = props; env.__cache = cache;
   env.__addSheetFile = (id, name, tab, rows, tz) => { files[id] = { name, mime: env.MimeType.GOOGLE_SHEETS, updated: Date.now(), ss: new Spreadsheet(id, name, [new Sheet(tab, rows)], tz) }; };
   env.__addXlsxFile = (id, name, rows) => { files[id] = { name, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', updated: Date.now(), rows }; };
 

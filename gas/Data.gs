@@ -8,10 +8,11 @@ var TABS = {
   TX: ['id', 'type', 'key', 'name', 'unit', 'kat', 'qty', 'date', 'person', 'purpose', 'cond', 'note', 'loanId', 'reason', 'createdAt', 'createdBy', 'void', 'voidReason', 'voidAt', 'voidBy', 'replaces'],
   ITEMS: ['key', 'name', 'unit', 'kat', 'awal', 'rak', 'min', 'note', 'hidden', 'full', 'source', 'updatedAt', 'updatedBy'],
   LOG: ['at', 'email', 'action', 'detail', 'result'],
+  FOTO_SJ: ['id', 'prKey', 'prNo', 'sjNo', 'items', 'fileId', 'fileName', 'folder', 'url', 'size', 'thumb', 'note', 'status', 'uploadedAt', 'uploadedBy'],
   KENDALA: ['id', 'prKey', 'prNo', 'itemNo', 'itemId', 'itemDesc', 'kategori', 'kendala', 'action', 'pic', 'komitmen', 'status', 'selesaiAt', 'followup', 'followupAt', 'geser', 'riwayat', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']
 };
 // kolom yang dipaksa teks agar Sheets tidak mengubah "3/4 inch" atau tanggal jadi nilai lain
-var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], KENDALA: ['komitmen', 'selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
+var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], FOTO_SJ: ['size', 'uploadedAt'], KENDALA: ['komitmen', 'selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
 
 function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); }
 function props_() { return PropertiesService.getScriptProperties(); }
@@ -89,12 +90,12 @@ function readValues_(info, preferTab) {
 function loadPR_(fresh) {
   var c = cfg_();
   if (!c.prId) fail_('not_configured', 'Sumber Tracking PR belum diatur admin.');
-  var info = fileInfo_(c.prId, fresh), ck = 'pr:' + c.prId + ':' + info.updated;
+  var rev = props_().getProperty('PR_REV') || '', info = fileInfo_(c.prId, fresh), ck = 'pr:' + c.prId + ':' + info.updated + ':' + rev;
   var hit = cacheGet_(ck);
   if (hit) return hit;
   var all = null;
   if (c.dbId) {
-    if (props_().getProperty('PR_SYNCED') !== c.prId + ':' + info.updated) all = syncPRCopy_(info);
+    if (props_().getProperty('PR_SYNCED') !== c.prId + ':' + info.updated + ':' + rev) all = syncPRCopy_(info, rev);
     if (!all) all = readPRCopy_();
   }
   if (!all) all = readValues_(info, 'TRACKING PR');
@@ -112,7 +113,7 @@ function parsePRValues_(all, info) {
 
 var PR_COPY_TAB = 'PR_DATA';
 /** Salin isi Tracking PR ke tab PR_DATA (semua sebagai teks, tanggal ISO). Mengembalikan nilai yang disalin. */
-function syncPRCopy_(info) {
+function syncPRCopy_(info, rev) {
   var all = readValues_(info, 'TRACKING PR');
   if (findHeaderRow_(all) < 0) fail_('shape', 'Tracking PR: kolom "Deskripsi" tidak ditemukan.');
   var lock = LockService.getScriptLock();
@@ -128,7 +129,7 @@ function syncPRCopy_(info) {
     if (sh.getMaxRows() < rows.length) sh.insertRowsAfter(sh.getMaxRows(), rows.length - sh.getMaxRows());
     if (sh.getMaxColumns && sh.getMaxColumns() < width) sh.insertColumnsAfter(sh.getMaxColumns(), width - sh.getMaxColumns());
     sh.getRange(1, 1, rows.length, width).setNumberFormat('@').setValues(rows);
-    props_().setProperties({ PR_SYNCED: info.id + ':' + info.updated, PR_SYNCED_AT: String(Date.now()) });
+    props_().setProperties({ PR_SYNCED: info.id + ':' + info.updated + ':' + (rev || ''), PR_SYNCED_AT: String(Date.now()) });
     return all;
   } finally { lock.releaseLock(); }
 }
