@@ -100,7 +100,7 @@ function parsePR_(rows, today) {
         reqDate: rq[0], reqNote: rq[1], ccQty: pNum_(r[7]), ccUnit: pStr_(r[8]), balance: pStr_(r[9]),
         releaseDate: rel[0], poDate: po[0], poNo: pStr_(r[12]), eta: eta[0],
         recvQty: pNum_(r[14]), recvUnit: pStr_(r[15]), recvDate: rc[0], sjNo: pStr_(r[17]), supplier: pStr_(r[18]),
-        status: normStatus_(pStr_(r[19])), remarks: pStr_(r[20])
+        status: normStatus_(pStr_(r[19])), remarks: pStr_(r[20]), r: ri
       };
       var extra = [rel[1], po[1], eta[1], rc[1]].filter(Boolean);
       if (extra.length) cur.remarks = [cur.remarks].concat(extra).filter(Boolean).join('; ');

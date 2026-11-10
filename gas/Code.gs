@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.7.0';
+var APP_VERSION = '1.8.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -44,6 +44,8 @@ function doPost(e) {
     if (a === 'login') return actLogin_(b);
     if (a === 'setupAdmin') return actSetupAdmin_(b);
     if (a === 'viewerLogin') return actViewerLogin_(b);
+    if (a === 'fotoThumbs') { requireView_(b.token); return actFotoThumbs_(b); }
+    if (a === 'fotoFull') { requireView_(b.token); return actFotoFull_(b); }
     if (a === 'getPR' || a === 'getStock') {
       requireView_(b.token);
       var action = a === 'getPR' ? 'pr' : 'stock', ck = 'pub:' + action + ':' + dataVersion_();
@@ -66,6 +68,12 @@ function doPost(e) {
       case 'saveKendala': return actSaveKendala_(me, b);
       case 'kendalaStatus': return actKendalaStatus_(me, b);
       case 'setPics': return actSetPics_(me, b);
+      case 'editPR': return actEditPR_(me, b);
+      case 'addPRItems': return actAddPRItems_(me, b);
+      case 'addPR': return actAddPR_(me, b);
+      case 'nextPRNo': return actNextPRNo_();
+      case 'uploadSJ': return actUploadSJ_(me, b);
+      case 'hapusFoto': return actHapusFoto_(me, b);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);
@@ -87,6 +95,8 @@ function staleFiles_() {
   if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
   if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
   if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
+  if (typeof actEditPR_ !== 'function') stale.push('PrEdit.gs');
+  if (typeof actUploadSJ_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
   return stale;
 }
 function actStatus_() {
@@ -102,7 +112,7 @@ function srcView_(id) {
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
   var pc = pinCfg_();
-  return { picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  return { prCanWrite: prCanWrite_(), picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**
@@ -188,7 +198,7 @@ function resetAdmins() {
 function syncPR() {
   var c = cfg_(); if (!c.prId) { console.log('Sumber Tracking PR belum diatur.'); return; }
   var info = fileInfo_(c.prId, true);
-  if (props_().getProperty('PR_SYNCED') === c.prId + ':' + info.updated) { console.log('Tracking PR belum berubah.'); return; }
+  if (props_().getProperty('PR_SYNCED') === c.prId + ':' + info.updated + ':' + (props_().getProperty('PR_REV') || '')) { console.log('Tracking PR belum berubah.'); return; }
   loadPR_(true); bumpDataVersion_();
   console.log('Tracking PR disalin ke tab ' + PR_COPY_TAB + '.');
 }

@@ -4,7 +4,7 @@
   "private": true,
   "description": "LoGistic Tracking — Tracking PR & Stok Gudang (GitHub Pages + Google Apps Script)",
   "scripts": {
-    "test": "node tests/run-tests.js && node tests/integration-test.js",
+    "test": "node tests/run-tests.js && node tests/integration-test.js && node tests/pr-edit-test.js",
     "dev": "node tests/mock-server.js",
     "bundle": "node tests/bundle.js"
   },

@@ -10,7 +10,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.7.0';
+var APP_VERSION = '1.8.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -48,6 +48,8 @@ function doPost(e) {
     if (a === 'login') return actLogin_(b);
     if (a === 'setupAdmin') return actSetupAdmin_(b);
     if (a === 'viewerLogin') return actViewerLogin_(b);
+    if (a === 'fotoThumbs') { requireView_(b.token); return actFotoThumbs_(b); }
+    if (a === 'fotoFull') { requireView_(b.token); return actFotoFull_(b); }
     if (a === 'getPR' || a === 'getStock') {
       requireView_(b.token);
       var action = a === 'getPR' ? 'pr' : 'stock', ck = 'pub:' + action + ':' + dataVersion_();
@@ -70,6 +72,12 @@ function doPost(e) {
       case 'saveKendala': return actSaveKendala_(me, b);
       case 'kendalaStatus': return actKendalaStatus_(me, b);
       case 'setPics': return actSetPics_(me, b);
+      case 'editPR': return actEditPR_(me, b);
+      case 'addPRItems': return actAddPRItems_(me, b);
+      case 'addPR': return actAddPR_(me, b);
+      case 'nextPRNo': return actNextPRNo_();
+      case 'uploadSJ': return actUploadSJ_(me, b);
+      case 'hapusFoto': return actHapusFoto_(me, b);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);
@@ -91,6 +99,8 @@ function staleFiles_() {
   if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
   if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
   if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
+  if (typeof actEditPR_ !== 'function') stale.push('PrEdit.gs');
+  if (typeof actUploadSJ_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
   return stale;
 }
 function actStatus_() {
@@ -106,7 +116,7 @@ function srcView_(id) {
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
   var pc = pinCfg_();
-  return { picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  return { prCanWrite: prCanWrite_(), picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**
@@ -192,7 +202,7 @@ function resetAdmins() {
 function syncPR() {
   var c = cfg_(); if (!c.prId) { console.log('Sumber Tracking PR belum diatur.'); return; }
   var info = fileInfo_(c.prId, true);
-  if (props_().getProperty('PR_SYNCED') === c.prId + ':' + info.updated) { console.log('Tracking PR belum berubah.'); return; }
+  if (props_().getProperty('PR_SYNCED') === c.prId + ':' + info.updated + ':' + (props_().getProperty('PR_REV') || '')) { console.log('Tracking PR belum berubah.'); return; }
   loadPR_(true); bumpDataVersion_();
   console.log('Tracking PR disalin ke tab ' + PR_COPY_TAB + '.');
 }
@@ -411,10 +421,11 @@ var TABS = {
   TX: ['id', 'type', 'key', 'name', 'unit', 'kat', 'qty', 'date', 'person', 'purpose', 'cond', 'note', 'loanId', 'reason', 'createdAt', 'createdBy', 'void', 'voidReason', 'voidAt', 'voidBy', 'replaces'],
   ITEMS: ['key', 'name', 'unit', 'kat', 'awal', 'rak', 'min', 'note', 'hidden', 'full', 'source', 'updatedAt', 'updatedBy'],
   LOG: ['at', 'email', 'action', 'detail', 'result'],
+  FOTO_SJ: ['id', 'prKey', 'prNo', 'sjNo', 'items', 'fileId', 'fileName', 'folder', 'url', 'size', 'thumb', 'note', 'status', 'uploadedAt', 'uploadedBy'],
   KENDALA: ['id', 'prKey', 'prNo', 'itemNo', 'itemId', 'itemDesc', 'kategori', 'kendala', 'action', 'pic', 'komitmen', 'status', 'selesaiAt', 'followup', 'followupAt', 'geser', 'riwayat', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']
 };
 // kolom yang dipaksa teks agar Sheets tidak mengubah "3/4 inch" atau tanggal jadi nilai lain
-var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], KENDALA: ['komitmen', 'selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
+var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], FOTO_SJ: ['size', 'uploadedAt'], KENDALA: ['komitmen', 'selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
 
 function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); }
 function props_() { return PropertiesService.getScriptProperties(); }
@@ -492,12 +503,12 @@ function readValues_(info, preferTab) {
 function loadPR_(fresh) {
   var c = cfg_();
   if (!c.prId) fail_('not_configured', 'Sumber Tracking PR belum diatur admin.');
-  var info = fileInfo_(c.prId, fresh), ck = 'pr:' + c.prId + ':' + info.updated;
+  var rev = props_().getProperty('PR_REV') || '', info = fileInfo_(c.prId, fresh), ck = 'pr:' + c.prId + ':' + info.updated + ':' + rev;
   var hit = cacheGet_(ck);
   if (hit) return hit;
   var all = null;
   if (c.dbId) {
-    if (props_().getProperty('PR_SYNCED') !== c.prId + ':' + info.updated) all = syncPRCopy_(info);
+    if (props_().getProperty('PR_SYNCED') !== c.prId + ':' + info.updated + ':' + rev) all = syncPRCopy_(info, rev);
     if (!all) all = readPRCopy_();
   }
   if (!all) all = readValues_(info, 'TRACKING PR');
@@ -515,7 +526,7 @@ function parsePRValues_(all, info) {
 
 var PR_COPY_TAB = 'PR_DATA';
 /** Salin isi Tracking PR ke tab PR_DATA (semua sebagai teks, tanggal ISO). Mengembalikan nilai yang disalin. */
-function syncPRCopy_(info) {
+function syncPRCopy_(info, rev) {
   var all = readValues_(info, 'TRACKING PR');
   if (findHeaderRow_(all) < 0) fail_('shape', 'Tracking PR: kolom "Deskripsi" tidak ditemukan.');
   var lock = LockService.getScriptLock();
@@ -531,7 +542,7 @@ function syncPRCopy_(info) {
     if (sh.getMaxRows() < rows.length) sh.insertRowsAfter(sh.getMaxRows(), rows.length - sh.getMaxRows());
     if (sh.getMaxColumns && sh.getMaxColumns() < width) sh.insertColumnsAfter(sh.getMaxColumns(), width - sh.getMaxColumns());
     sh.getRange(1, 1, rows.length, width).setNumberFormat('@').setValues(rows);
-    props_().setProperties({ PR_SYNCED: info.id + ':' + info.updated, PR_SYNCED_AT: String(Date.now()) });
+    props_().setProperties({ PR_SYNCED: info.id + ':' + info.updated + ':' + (rev || ''), PR_SYNCED_AT: String(Date.now()) });
     return all;
   } finally { lock.releaseLock(); }
 }
@@ -704,7 +715,7 @@ function stockContext_(ss, fresh) {
 
 function actPR_(fresh) {
   var pr = loadPR_(!!fresh);
-  return { prs: pr.prs, items: pr.items, source: pr.source, readAt: pr.readAt, today: todayISO_(), kendala: listKendala_(), picList: picList_() };
+  return { prs: pr.prs, items: pr.items, source: pr.source, readAt: pr.readAt, today: todayISO_(), kendala: listKendala_(), picList: picList_(), foto: listFoto_() };
 }
 
 function actStock_(fresh) {
@@ -1109,6 +1120,268 @@ function aktifkanEditDariSheet() {
   console.log((a ? 'Tab KENDALA dirapikan (dropdown, tanggal, kolom teknis disembunyikan). ' : 'Tab KENDALA belum ada. ') + (b ? 'Trigger edit Sheet aktif.' : 'Trigger edit gagal dipasang.'));
 }
 
+// ===== PrEdit.gs =====
+/**
+ * PrEdit.gs — admin mengedit Tracking PR langsung dari aplikasi (butuh akses Editor ke Sheet PR).
+ * - Edit item: hanya sel yang berubah ditulis; lokasi baris dicari ulang saat simpan;
+ *   cek bentrok (nilai di Sheet dibanding nilai yang dilihat admin saat membuka form).
+ * - Tambah item ke PR yang ada (disisipkan setelah item terakhir PR itu) & tambah PR baru (di akhir log book).
+ * Kolom kunci (No, Deskripsi, Qty, Sat, Tgl PR, No. PR) tidak diubah lewat edit agar tautan item/kendala aman.
+ */
+var PR_COLS = { no: 0, desc: 1, qty: 2, unit: 3, prDate: 4, prNo: 5, reqDate: 6, ccQty: 7, ccUnit: 8, balance: 9, releaseDate: 10, poDate: 11, poNo: 12, eta: 13, recvQty: 14, recvUnit: 15, recvDate: 16, sjNo: 17, supplier: 18, status: 19, remarks: 20 };
+var PR_EDITABLE = ['reqDate', 'ccQty', 'ccUnit', 'balance', 'releaseDate', 'poDate', 'poNo', 'eta', 'recvQty', 'recvUnit', 'recvDate', 'sjNo', 'supplier', 'status', 'remarks'];
+var PR_DATE_F = { prDate: 1, reqDate: 1, releaseDate: 1, poDate: 1, eta: 1, recvDate: 1 };
+var PR_NUM_F = { qty: 1, ccQty: 1, recvQty: 1 };
+
+function prSheetW_() {
+  var id = cfg_().prId; if (!id) fail_('not_configured', 'Sumber Tracking PR belum diatur.');
+  var ss; try { ss = SpreadsheetApp.openById(id); } catch (e) { fail_('source', 'Tracking PR tidak bisa dibuka.'); }
+  var sheets = ss.getSheets();
+  return sheets.filter(function (s) { return s.getName().trim().toUpperCase() === 'TRACKING PR'; })[0] || sheets[0];
+}
+/** Baca Sheet PR langsung (bukan salinan) + cek struktur kolom. */
+function prLive_(sh) {
+  var tz; try { tz = tz_(sh.getParent && sh.getParent().getSpreadsheetTimeZone()); } catch (e) { tz = tz_(); }
+  var vals = sh.getDataRange().getValues().map(function (r) { return r.map(function (v) { return isDate_(v) ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : v; }); });
+  var hi = findHeaderRow_(vals);
+  if (hi < 0) fail_('shape', 'Tracking PR: kolom "Deskripsi" tidak ditemukan.');
+  var h = vals[hi];
+  if (!/pr/i.test(String(h[PR_COLS.prNo])) || !/status/i.test(String(h[PR_COLS.status])) || !/supplier/i.test(String(h[PR_COLS.supplier])))
+    fail_('shape', 'Struktur kolom Tracking PR berubah (No. PR di kolom F, SUPPLIER di S, STATUS di T). Edit dibatalkan agar data tidak tertulis ke kolom yang salah.');
+  var parsed = parsePR_(vals.slice(hi + 1), todayISO_());
+  return { vals: vals, hi: hi, parsed: parsed, rowOf: function (it) { return hi + 2 + it.r; } };
+}
+/** Bisakah akun pemilik script menulis ke Sheet PR? */
+function prCanWrite_() {
+  var id = cfg_().prId; if (!id) return false;
+  try {
+    var f = DriveApp.getFileById(id), me = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+    try { if (f.getOwner() && f.getOwner().getEmail().toLowerCase() === me) return true; } catch (e) { }
+    try { if (f.getEditors().some(function (u) { return u.getEmail().toLowerCase() === me; })) return true; } catch (e) { }
+    try { if (f.getSharingPermission() === DriveApp.Permission.EDIT && f.getSharingAccess() !== DriveApp.Access.PRIVATE) return true; } catch (e) { }
+    return false;
+  } catch (e) { return false; }
+}
+var PR_NO_ACCESS = 'Akun pemilik script belum menjadi Editor di Sheet Tracking PR. Minta pemilik Sheet (prc.citrakd) memberi akses Editor.';
+/** Jalankan penulisan; error izin dari Google diterjemahkan menjadi pesan yang jelas. */
+function prWrite_(fn) {
+  try { return fn(); } catch (e) {
+    if (e && e.code) throw e;
+    if (/permission|izin|access|akses|denied|ditolak/i.test(String(e && e.message))) fail_('forbidden', PR_NO_ACCESS);
+    throw e;
+  }
+}
+function requirePRWrite_() { /* izin dicek saat menulis (prWrite_) karena akses lewat link tidak selalu terdeteksi */ }
+
+function normCmp_(f, v) {
+  if (v === null || v === undefined) return '';
+  if (PR_NUM_F[f]) { var n = pNum_(v); return n === null ? String(v).trim() : String(n); }
+  return String(v).trim();
+}
+function cleanVal_(f, v) {
+  v = v === null || v === undefined ? '' : String(v).trim();
+  if (v === '') return '';
+  if (PR_DATE_F[f]) { if (!isISO_(v)) fail_('invalid', 'Tanggal tidak valid untuk ' + f + '.'); return v; }
+  if (PR_NUM_F[f]) { var n = pNum_(v); if (n === null || n < 0) fail_('invalid', 'Angka tidak valid untuk ' + f + '.'); return n; }
+  if (f === 'status' && STATUSES.indexOf(v) < 0) fail_('invalid', 'Status harus salah satu: ' + STATUSES.join(', ') + '.');
+  return v.slice(0, 300);
+}
+function writeCell_(sh, row, f, v) {
+  var rg = sh.getRange(row, PR_COLS[f] + 1);
+  if (v === '') { rg.setValue(''); return; }
+  if (PR_DATE_F[f]) { var p = String(v).split('-'); rg.setNumberFormat('d-mmm').setValue(new Date(+p[0], +p[1] - 1, +p[2])); return; }
+  if (PR_NUM_F[f]) { rg.setValue(+v); return; }
+  rg.setNumberFormat('@').setValue(String(v));
+}
+function afterPRWrite_() {
+  try { SpreadsheetApp.flush(); } catch (e) { }
+  var p = props_(); p.deleteProperty('PR_SYNCED'); p.setProperty('PR_REV', Date.now().toString(36));
+  bumpDataVersion_();
+  try { loadPR_(true); } catch (e) { /* salinan diperbarui saat dibuka berikutnya */ }
+}
+
+/** changes: [{ id, fields:{f:nilaiBaru}, orig:{f:nilaiYangDilihat} }] (1–100 item). */
+function actEditPR_(me, b) {
+  var changes = Array.isArray(b.changes) ? b.changes : [];
+  if (!changes.length || changes.length > 100) fail_('invalid', 'Pilih 1–100 item.');
+  requirePRWrite_();
+  return withLock_(function () {
+    var sh = prSheetW_(), live = prLive_(sh), byId = {}, conflicts = [], plan = [];
+    live.parsed.items.forEach(function (it) { byId[it.id] = it; });
+    changes.forEach(function (c) {
+      var it = byId[c.id];
+      if (!it) fail_('conflict', 'Item tidak ditemukan lagi di Sheet (mungkin diubah/dihapus orang lain). Muat ulang lalu coba lagi.');
+      Object.keys(c.fields || {}).forEach(function (f) {
+        if (PR_EDITABLE.indexOf(f) < 0) fail_('invalid', 'Kolom ' + f + ' tidak bisa diedit dari aplikasi.');
+        var nv = cleanVal_(f, c.fields[f]);
+        if (c.orig && f in c.orig && normCmp_(f, c.orig[f]) !== normCmp_(f, it[f]))
+          conflicts.push(it.prNo + ' item ' + (it.no || '?') + ' · ' + f + ': di Sheet sekarang "' + (it[f] === null ? '' : it[f]) + '"');
+        if (normCmp_(f, nv) !== normCmp_(f, it[f])) plan.push({ row: live.rowOf(it), f: f, v: nv, it: it, old: it[f] });
+      });
+    });
+    if (conflicts.length) fail_('conflict', 'Data sudah diubah orang lain di Sheet sejak form dibuka:\n' + conflicts.slice(0, 8).join('\n') + '\nMuat ulang lalu ulangi edit.');
+    prWrite_(function () { plan.forEach(function (p) { writeCell_(sh, p.row, p.f, p.v); }); });
+    if (plan.length) afterPRWrite_();
+    log_(me.email, 'editPR', plan.map(function (p) { return p.it.prNo + '#' + p.it.no + ' ' + p.f + ': ' + (p.old === null ? '' : p.old) + ' → ' + p.v; }).join('; ').slice(0, 480));
+    return { updated: plan.length };
+  });
+}
+
+function cleanNewItems_(items) {
+  if (!Array.isArray(items) || !items.length || items.length > 50) fail_('invalid', 'Isi 1–50 item.');
+  return items.map(function (x, i) {
+    var desc = pStr_(x.desc).slice(0, 300), qty = pNum_(x.qty), unit = pStr_(x.unit).slice(0, 30);
+    if (!desc) fail_('invalid', 'Item ' + (i + 1) + ': deskripsi wajib.');
+    if (qty === null || !(qty > 0)) fail_('invalid', 'Item ' + (i + 1) + ': qty harus angka > 0.');
+    if (!unit) fail_('invalid', 'Item ' + (i + 1) + ': satuan wajib.');
+    var spec = pStr_(x.spec).split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 10);
+    return { desc: desc, qty: qty, unit: unit, spec: spec };
+  });
+}
+function blankRow_() { var r = []; for (var i = 0; i < 21; i++) r.push(''); return r; }
+function isoToDate_(v) { if (!isISO_(v)) return ''; var p = v.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function itemRows_(items, startNo, prNo, prDate, reqDate) {
+  var rows = [];
+  items.forEach(function (x, i) {
+    var r = blankRow_(); r[0] = startNo + i; r[1] = x.desc; r[2] = x.qty; r[3] = x.unit; r[4] = prDate; r[5] = prNo; r[6] = reqDate; r[19] = 'Belum Release PR';
+    rows.push(r);
+    x.spec.forEach(function (s) { var sr = blankRow_(); sr[1] = '- ' + s.replace(/^-\s*/, ''); rows.push(sr); });
+  });
+  return rows;
+}
+function writeBlock_(sh, startRow, rows, fmtSrcRow) {
+  sh.getRange(startRow, 1, rows.length, 21).setValues(rows);
+  try { if (fmtSrcRow) sh.getRange(fmtSrcRow, 1, 1, 21).copyTo(sh.getRange(startRow, 1, rows.length, 21), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false); } catch (e) { }
+  rows.forEach(function (r, i) {
+    [4, 6].forEach(function (c) { if (isDate_(r[c])) sh.getRange(startRow + i, c + 1).setNumberFormat('d-mmm'); });
+    [1, 5].forEach(function (c) { if (r[c] !== '') sh.getRange(startRow + i, c + 1).setNumberFormat('@'); });
+  });
+}
+
+/** Tambah item ke PR yang sudah ada: disisipkan setelah item terakhir PR (dan baris spesifikasinya). */
+function actAddPRItems_(me, b) {
+  var items = cleanNewItems_(b.items), reqIso = pStr_(b.reqDate);
+  requirePRWrite_();
+  return withLock_(function () {
+    var sh = prSheetW_(), live = prLive_(sh), key = keyOfPR_(pStr_(b.prNo));
+    var mine = live.parsed.items.filter(function (it) { return it.pr === key; });
+    if (!mine.length) fail_('invalid', 'PR ' + b.prNo + ' tidak ditemukan di Sheet.');
+    var last = mine.reduce(function (a, it) { return it.r > a.r ? it : a; }, mine[0]);
+    var data = live.vals.slice(live.hi + 1), pos = last.r;
+    while (pos + 1 < data.length && !pStr_(data[pos + 1][PR_COLS.prNo]) && /^-/.test(pStr_(data[pos + 1][PR_COLS.desc]))) pos++;
+    var maxNo = mine.reduce(function (m, it) { return Math.max(m, +it.no || 0); }, 0);
+    var raw = live.vals[live.rowOf(last) - 1];
+    var prNoText = pStr_(raw[PR_COLS.prNo]), prDate = isoToDate_(String(raw[PR_COLS.prDate])) || raw[PR_COLS.prDate];
+    var rows = itemRows_(items, maxNo + 1, prNoText, prDate, isoToDate_(reqIso) || (reqIso ? reqIso : raw[PR_COLS.reqDate]));
+    var after = live.hi + 2 + pos; // baris Sheet terakhir milik PR ini
+    prWrite_(function () { sh.insertRowsAfter(after, rows.length); writeBlock_(sh, after + 1, rows, live.rowOf(last)); });
+    afterPRWrite_();
+    log_(me.email, 'addPRItems', prNoText + ': ' + items.map(function (x) { return x.qty + ' ' + x.unit + ' ' + x.desc; }).join('; ').slice(0, 450));
+    return { prNo: prNoText, added: items.length };
+  });
+}
+
+/** Nomor PR berikutnya (format terbaru di Sheet: "PR-081"). */
+function nextPRNo_(prs) {
+  var max = 0; prs.forEach(function (p) { var m = /(\d+)\s*$/.exec(p.prNo); if (m) max = Math.max(max, +m[1]); });
+  return 'PR-' + String(max + 1).padStart(3, '0');
+}
+function actNextPRNo_() { var sh = prSheetW_(); return { prNo: nextPRNo_(prLive_(sh).parsed.prs), canWrite: prCanWrite_() }; }
+
+/** Tambah PR baru di akhir log book: baris kosong pemisah, item, "U/ keperluan", "Note : ...". */
+function actAddPR_(me, b) {
+  var items = cleanNewItems_(b.items), prDate = pStr_(b.prDate) || todayISO_(), reqIso = pStr_(b.reqDate);
+  if (!isISO_(prDate)) fail_('invalid', 'Tanggal PR tidak valid.');
+  if (reqIso && !isISO_(reqIso)) fail_('invalid', 'Tanggal dibutuhkan tidak valid.');
+  requirePRWrite_();
+  return withLock_(function () {
+    var sh = prSheetW_(), live = prLive_(sh), prNo = pStr_(b.prNo) || nextPRNo_(live.parsed.prs);
+    if (!/^PR/i.test(prNo)) fail_('invalid', 'No. PR harus diawali "PR" (mis. PR-081).');
+    if (live.parsed.prs.some(function (p) { return p.key === keyOfPR_(prNo); })) fail_('invalid', prNo + ' sudah ada di Sheet.');
+    var rows = itemRows_(items, 1, prNo, isoToDate_(prDate), reqIso ? isoToDate_(reqIso) : '');
+    var purpose = pStr_(b.purpose).slice(0, 200), note = pStr_(b.note).slice(0, 300);
+    if (purpose) { var u = blankRow_(); u[1] = 'U/ ' + purpose.replace(/^u\/\s*/i, ''); rows.push(u); }
+    if (note) { var n = blankRow_(); n[1] = 'Note : ' + note.replace(/^note\s*:\s*/i, ''); rows.push(n); }
+    var last = sh.getLastRow(), start = last + 2, need = start + rows.length - 1 - sh.getMaxRows();
+    var lastItem = live.parsed.items[live.parsed.items.length - 1];
+    prWrite_(function () { if (need > 0) sh.insertRowsAfter(sh.getMaxRows(), need + 20); writeBlock_(sh, start, rows, lastItem ? live.rowOf(lastItem) : null); });
+    afterPRWrite_();
+    log_(me.email, 'addPR', prNo + ': ' + items.length + ' item' + (purpose ? ' · U/ ' + purpose : ''));
+    return { prNo: prNo, added: items.length };
+  });
+}
+
+// ===== Foto.gs =====
+/**
+ * Foto.gs — foto surat jalan per PR, diambil dari kamera HP.
+ * File disimpan di Drive akun pemilik script: LoGistic Tracking / Surat Jalan / yyyy-MM-dd (tanggal upload).
+ * File tidak dibagikan publik; viewer melihat lewat aplikasi (PIN/admin) yang mengirim gambarnya.
+ */
+var FOTO_MAX_FILES = 8, FOTO_MAX_BYTES = 6 * 1024 * 1024;
+
+function folderPath_(names) {
+  var p = props_(), key = 'FOLDER_' + names.join('/'), id = p.getProperty(key);
+  if (id) { try { var f0 = DriveApp.getFolderById(id); if (!f0.isTrashed || !f0.isTrashed()) return f0; } catch (e) { } }
+  var cur = DriveApp.getRootFolder();
+  names.forEach(function (n) { var it = cur.getFoldersByName(n); cur = it.hasNext() ? it.next() : cur.createFolder(n); });
+  p.setProperty(key, cur.getId());
+  return cur;
+}
+function listFoto_() {
+  try {
+    return readTable_(db_(), 'FOTO_SJ').filter(function (r) { return r.status !== 'dihapus'; }).map(function (r) {
+      var o = stripRow_(r); delete o.thumb; return o;
+    });
+  } catch (e) { return []; }
+}
+/** files: [{ data: base64 jpeg, thumb: base64 kecil, mime }] */
+function actUploadSJ_(me, b) {
+  var files = Array.isArray(b.files) ? b.files : [], prNo = pStr_(b.prNo), sj = pStr_(b.sjNo).slice(0, 40), note = pStr_(b.note).slice(0, 300);
+  if (!prNo) fail_('invalid', 'No. PR wajib.');
+  if (!files.length || files.length > FOTO_MAX_FILES) fail_('invalid', 'Kirim 1–' + FOTO_MAX_FILES + ' foto sekaligus.');
+  var day = todayISO_(), folder = folderPath_(['LoGistic Tracking', 'Surat Jalan', day]), now = Date.now(), rows = [];
+  var hhmmss = Utilities.formatDate(new Date(), tz_(), 'HHmmss'), safe = function (s) { return String(s).replace(/[^A-Za-z0-9-]+/g, ''); };
+  files.forEach(function (f, i) {
+    var mime = /^image\/(jpeg|png|webp)$/.test(f.mime) ? f.mime : 'image/jpeg';
+    var bytes; try { bytes = Utilities.base64Decode(String(f.data || '')); } catch (e) { fail_('invalid', 'Foto ' + (i + 1) + ' rusak.'); }
+    if (!bytes.length || bytes.length > FOTO_MAX_BYTES) fail_('invalid', 'Foto ' + (i + 1) + ' terlalu besar (maks 6 MB).');
+    var name = 'SJ_' + safe(prNo) + (sj ? '_' + safe(sj) : '') + '_' + hhmmss + '_' + (i + 1) + (mime === 'image/png' ? '.png' : '.jpg');
+    var file = folder.createFile(Utilities.newBlob(bytes, mime, name));
+    try { file.setDescription('Surat jalan ' + prNo + (sj ? ' · SJ ' + sj : '') + (note ? ' · ' + note : '') + ' · diunggah ' + me.email); } catch (e) { }
+    rows.push({ id: 'f' + now.toString(36) + i + Utilities.getUuid().slice(0, 4), prKey: keyOfPR_(prNo), prNo: prNo, sjNo: sj, items: pStr_(b.items).slice(0, 200),
+      fileId: file.getId(), fileName: name, folder: day, url: file.getUrl(), size: bytes.length, thumb: String(f.thumb || '').slice(0, 45000),
+      note: note, status: 'aktif', uploadedAt: now, uploadedBy: me.email });
+  });
+  var ss = db_(); appendRows_(ss, 'FOTO_SJ', rows); bumpDataVersion_();
+  log_(me.email, 'uploadSJ', prNo + (sj ? ' SJ ' + sj : '') + ' · ' + rows.length + ' foto → Surat Jalan/' + day);
+  return { saved: rows.length, folder: 'LoGistic Tracking / Surat Jalan / ' + day };
+}
+/** Thumbnail semua foto 1 PR (untuk galeri). */
+function actFotoThumbs_(b) {
+  var key = keyOfPR_(pStr_(b.prNo));
+  return readTable_(db_(), 'FOTO_SJ').filter(function (r) { return r.prKey === key && r.status !== 'dihapus'; })
+    .map(function (r) { return { id: r.id, thumb: r.thumb, sjNo: r.sjNo, note: r.note, uploadedAt: r.uploadedAt, uploadedBy: r.uploadedBy, folder: r.folder }; });
+}
+/** Gambar ukuran penuh (base64) — dikirim lewat script agar file Drive tetap privat. */
+function actFotoFull_(b) {
+  var r = readTable_(db_(), 'FOTO_SJ').filter(function (x) { return x.id === b.id && x.status !== 'dihapus'; })[0];
+  if (!r) fail_('invalid', 'Foto tidak ditemukan.');
+  var blob = DriveApp.getFileById(r.fileId).getBlob();
+  return { id: r.id, mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()), name: r.fileName };
+}
+function actHapusFoto_(me, b) {
+  var reason = pStr_(b.reason); if (!reason) fail_('invalid', 'Alasan wajib diisi.');
+  return withLock_(function () {
+    var ss = db_(), r = readTable_(ss, 'FOTO_SJ').filter(function (x) { return x.id === b.id; })[0];
+    if (!r) fail_('invalid', 'Foto tidak ditemukan.');
+    try { DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) { }
+    var o = stripRow_(r); o.status = 'dihapus'; o.note = (o.note ? o.note + ' · ' : '') + 'dihapus: ' + reason;
+    updateRow_(ss, 'FOTO_SJ', r._row, o);
+    log_(me.email, 'hapusFoto', r.prNo + ' ' + r.fileName + ' (' + reason + ')');
+    return { id: r.id };
+  });
+}
+
 // ===== Logic.gs =====
 /**
  * Logic.gs — fungsi murni (tanpa layanan Google) untuk parsing log book PR,
@@ -1212,7 +1485,7 @@ function parsePR_(rows, today) {
         reqDate: rq[0], reqNote: rq[1], ccQty: pNum_(r[7]), ccUnit: pStr_(r[8]), balance: pStr_(r[9]),
         releaseDate: rel[0], poDate: po[0], poNo: pStr_(r[12]), eta: eta[0],
         recvQty: pNum_(r[14]), recvUnit: pStr_(r[15]), recvDate: rc[0], sjNo: pStr_(r[17]), supplier: pStr_(r[18]),
-        status: normStatus_(pStr_(r[19])), remarks: pStr_(r[20])
+        status: normStatus_(pStr_(r[19])), remarks: pStr_(r[20]), r: ri
       };
       var extra = [rel[1], po[1], eta[1], rc[1]].filter(Boolean);
       if (extra.length) cur.remarks = [cur.remarks].concat(extra).filter(Boolean).join('; ');
