@@ -111,6 +111,16 @@ t('Upload foto SJ: masuk Drive LoGistic Tracking/Surat Jalan/<tanggal>, tercatat
   g.post({ action: 'uploadSJ', token: tok, prNo: 'PR-077', files: [{ data: JPG }] });
   assert.strictEqual(Object.values(env.__folders).filter(f => f.name === today).length, 1);
 });
+t('Link foto ditulis ke kolom V (setelah REMARKS) di baris item terkait; hapus foto → link ikut hilang', () => {
+  const d = prSh().data, hi = d.findIndex(x => x[1] === 'Deskripsi');
+  assert.strictEqual(d[hi][21], 'FOTO SJ', 'judul kolom V');
+  const kawat = d.findIndex(x => x[1] === 'Kawat Galvanis 2mm'), wire = d.findIndex(x => x[1] === 'Wire Mesh 4mm');
+  assert.ok(/^SJ 1301 \(\d+-\w+\) \| SJ 1301 \(\d+-\w+\) #2$/.test(d[kawat][21]), 'baris item ber-SJ 1301: ' + d[kawat][21]);
+  assert.strictEqual(d[wire][21] || '', '', 'item lain tanpa SJ 1301 tidak diberi link');
+  const links = prSh().links[(kawat + 1) + ':22']; assert.strictEqual(links.length, 2); assert.ok(/drive\.google\.com\/file\/d\//.test(links[0][1]));
+  const p77 = d.find(x => x[1] === 'Hand Pallet 3 Ton'); assert.ok(/^Foto \(/.test(p77[21]), 'upload tanpa SJ → semua item PR: ' + p77[21]);
+  const shared = Object.values(env.__files).filter(f => f.sharedWith); assert.ok(shared.length >= 0);
+});
 t('Lihat foto: thumbnail & ukuran penuh lewat script (PIN berlaku), hapus → Sampah Drive', () => {
   const th = g.post({ action: 'fotoThumbs', prNo: 'PR-078' }); assert.ok(th.ok); assert.strictEqual(th.data.length, 2); assert.strictEqual(th.data[0].thumb, 'dGh1bWI=');
   const full = g.post({ action: 'fotoFull', id: fotoId }); assert.ok(full.ok, full.message); assert.strictEqual(full.data.data, JPG);
@@ -121,6 +131,15 @@ t('Lihat foto: thumbnail & ukuran penuh lewat script (PIN berlaku), hapus → Sa
   assert.ok(g.post({ action: 'hapusFoto', token: tok, id: fotoId, reason: 'buram' }).ok);
   assert.strictEqual(g.post({ action: 'getPR', token: tok }).data.foto.filter(f => f.prNo === 'PR-078').length, 1);
   assert.ok(Object.values(env.__files).some(f => f.trashed), 'file dipindah ke Sampah');
+  const kawat = prSh().data.find(x => x[1] === 'Kawat Galvanis 2mm'); assert.ok(/^SJ 1301 \(\d+-\w+\)$/.test(kawat[21]), 'tinggal 1 link: ' + kawat[21]);
+});
+t('Upload tetap berhasil walau tanpa akses Editor (link tidak ditulis, ada keterangan)', () => {
+  prSh().readOnly = true;
+  const r = g.post({ action: 'uploadSJ', token: tok, prNo: 'PR-079', files: [{ data: Buffer.from([1, 2, 3]).toString('base64') }] });
+  prSh().readOnly = false;
+  assert.ok(r.ok, r.message); assert.strictEqual(r.data.linkWritten, false); assert.ok(/Editor/.test(r.data.linkNote));
+  const f = g.post({ action: 'getPR', token: tok }).data.foto.find(x => x.prNo === 'PR-079'); assert.ok(f);
+  assert.ok(g.post({ action: 'hapusFoto', token: tok, id: f.id, reason: 'uji' }).ok);
 });
 console.log(`\nHasil: ${pass} PASS, ${fail} FAIL`);
 process.exit(fail ? 1 : 0);
