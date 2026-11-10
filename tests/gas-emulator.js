@@ -28,6 +28,8 @@ class Sheet {
       getValues() { const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const v = (sh.data[r - 1 + i] || [])[c - 1 + j]; row.push(v === undefined || v === null ? '' : v); } out.push(row); } return out; },
       copyTo() { return this; },
       setValues(v) { if (sh.readOnly) throw new Error('You do not have permission to access the requested document.'); if (v.length !== nr || v[0].length !== nc) throw new Error('Ukuran setValues tidak cocok'); for (let i = 0; i < nr; i++) { sh.data[r - 1 + i] = sh.data[r - 1 + i] || []; for (let j = 0; j < nc; j++) sh.data[r - 1 + i][c - 1 + j] = v[i][j]; } return this; },
+      setRichTextValue(rt) { if (sh.readOnly) throw new Error('You do not have permission to access the requested document.'); sh.data[r - 1] = sh.data[r - 1] || []; sh.data[r - 1][c - 1] = rt.text; (sh.links = sh.links || {})[r + ':' + c] = rt.links; return this; },
+      getValue() { const v = (sh.data[r - 1] || [])[c - 1]; return v === undefined || v === null ? '' : v; },
       setValue(v) { if (sh.readOnly) throw new Error('You do not have permission to access the requested document.'); sh.data[r - 1] = sh.data[r - 1] || []; sh.data[r - 1][c - 1] = v; return this; },
       setDataValidation(rule) { (sh.validations = sh.validations || {})[c] = rule; if (c === 3) sh.validation = { row: r, col: c, n: nr, rule }; return this; },
       setFontWeight() { return this; }, setNumberFormat() { return this; }
@@ -92,7 +94,7 @@ function createEnv(opts = {}) {
       getRootFolder: () => mkFolder('root', 'My Drive'),
       getFolderById: id => { if (!folders[id]) throw new Error('no folder'); return folders[id]; },
       getFileById: id => { const f = files[id]; if (!f) throw new Error('File not found: ' + id);
-        return { getOwner: () => ({ getEmail: () => f.owner || 'owner@x.co' }), getEditors: () => (f.editors || []).map(e => ({ getEmail: () => e })), getSharingPermission: () => 'VIEW', getSharingAccess: () => 'ANYONE_WITH_LINK', getName: () => f.name, getMimeType: () => f.mime, getLastUpdated: () => new Date(f.updated), getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getBlob: () => f.bytes ? { getBytes: () => f.bytes, getContentType: () => f.mime, rows: f.rows } : { rows: f.rows }, setTrashed: () => { f.trashed = true; } }; }
+        return { getOwner: () => ({ getEmail: () => f.owner || 'owner@x.co' }), getEditors: () => (f.editors || []).map(e => ({ getEmail: () => e })), getViewers: () => (f.viewers || []).map(e => ({ getEmail: () => e })), addViewers: l => { f.sharedWith = (f.sharedWith || []).concat(l); }, getSharingPermission: () => 'VIEW', getSharingAccess: () => 'ANYONE_WITH_LINK', getName: () => f.name, getMimeType: () => f.mime, getLastUpdated: () => new Date(f.updated), getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getBlob: () => f.bytes ? { getBytes: () => f.bytes, getContentType: () => f.mime, rows: f.rows } : { rows: f.rows }, setTrashed: () => { f.trashed = true; } }; }
     },
     Drive: { Files: {
       create: (res, blob) => { const id = 'tmp' + crypto.randomUUID().replace(/-/g, ''); files[id] = { name: res.name, mime: res.mimeType, updated: Date.now(), ss: new Spreadsheet(id, res.name, [new Sheet('MASTER', blob.rows)]) }; return { id }; },
@@ -104,7 +106,8 @@ function createEnv(opts = {}) {
       newTrigger: fn => { const mk = () => ({ create: () => { const t = { getHandlerFunction: () => fn }; tr.push(t); return t; } }); return { timeBased: () => ({ everyMinutes: mk }), forSpreadsheet: () => ({ onEdit: mk }) }; }
     }; })(),
     SpreadsheetApp: {
-      flush: () => { }, CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT' },
+      flush: () => { },
+      newRichTextValue: () => { const o = { text: '', links: [] }; const b = { setText: t => { o.text = t; return b; }, setLinkUrl: (s0, e, u) => { o.links.push([o.text.slice(s0, e), u]); return b; }, build: () => o }; return b; }, CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT' },
       ProtectionType: { SHEET: 'SHEET' },
       newDataValidation: () => { const rule = {}; const b = { requireDate: () => { rule.date = true; return b; }, requireValueInList: (l) => { rule.list = l.slice(); return b; }, setAllowInvalid: (x) => { rule.allowInvalid = x; return b; }, setHelpText: () => b, build: () => rule }; return b; },
       getActiveSpreadsheet: () => (opts.boundId && files[opts.boundId] ? files[opts.boundId].ss : null),

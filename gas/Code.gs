@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.8.0';
+var APP_VERSION = '1.8.1';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -96,7 +96,7 @@ function staleFiles_() {
   if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
   if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
   if (typeof actEditPR_ !== 'function') stale.push('PrEdit.gs');
-  if (typeof actUploadSJ_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
+  if (typeof writeFotoLinks_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
   return stale;
 }
 function actStatus_() {

@@ -582,8 +582,9 @@
     $('#fsSave').onclick = () => {
       if (!shots.length) { showErr('fsErr', 'Ambil minimal 1 foto.'); return; }
       const kb = Math.round(shots.reduce((a, s) => a + s.data.length * 0.75, 0) / 1024);
-      submit('fsSave', 'fsErr', async () => { await apiPost('uploadSJ', { prNo: p.prNo, sjNo: val('fsSj'), note: val('fsNote'), items: it ? String(it.no) : '', files: shots }); delete state.thumbs[p.key]; }, `${shots.length} foto surat jalan tersimpan`,
-        { title: `Unggah ${shots.length} foto surat jalan?`, rows: [['PR', esc(p.prNo)], ['No. SJ', esc(val('fsSj'))], ['Catatan', esc(val('fsNote'))], ['Foto', `<span class="gal">${shots.map(s => `<span class="th"><img alt="" src="data:image/jpeg;base64,${s.thumb}"></span>`).join('')}</span><span class="dim">±${kb} KB</span>`], ['Folder Drive', `LoGistic Tracking / Surat Jalan / ${esc(today())}`]], ok: 'Ya, unggah' });
+      submit('fsSave', 'fsErr', async () => { const r = await apiPost('uploadSJ', { prNo: p.prNo, sjNo: val('fsSj'), note: val('fsNote'), items: it ? String(it.no) : '', files: shots }); delete state.thumbs[p.key];
+          if (r && r.linkWritten === false) setTimeout(() => toast('Foto tersimpan di Drive, tapi link belum ditulis ke Sheet PR: ' + r.linkNote, true), 3200); }, `${shots.length} foto surat jalan tersimpan · link ditulis di kolom FOTO SJ`,
+        { title: `Unggah ${shots.length} foto surat jalan?`, rows: [['PR', esc(p.prNo)], ['No. SJ', esc(val('fsSj'))], ['Catatan', esc(val('fsNote'))], ['Foto', `<span class="gal">${shots.map(s => `<span class="th"><img alt="" src="data:image/jpeg;base64,${s.thumb}"></span>`).join('')}</span><span class="dim">±${kb} KB</span>`], ['Folder Drive', `LoGistic Tracking / Surat Jalan / ${esc(today())}`], ['Link di Sheet PR', `kolom <b>FOTO SJ</b> (setelah REMARKS) pada ${it ? 'item #' + esc(fmtN(it.no)) : val('fsSj') ? 'item ber-No. SJ ' + esc(val('fsSj')) : 'semua item ' + esc(p.prNo)}`]], ok: 'Ya, unggah' });
     };
   }
 
@@ -1214,7 +1215,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.8.0';
+    $('#ver').textContent = 'v1.8.1';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }

@@ -38,9 +38,21 @@ function actUploadSJ_(me, b) {
       fileId: file.getId(), fileName: name, folder: day, url: file.getUrl(), size: bytes.length, thumb: String(f.thumb || '').slice(0, 45000),
       note: note, status: 'aktif', uploadedAt: now, uploadedBy: me.email });
   });
+  // item yang ditautkan: dari detail item → item itu; dari PR → item dengan No. SJ sama; selain itu semua item PR
+  var targetItems = pStr_(b.items);
+  try {
+    if (!targetItems) {
+      var itemsPR = loadPR_(false).items.filter(function (it) { return it.pr === keyOfPR_(prNo); });
+      var bySj = sj ? itemsPR.filter(function (it) { return normT_(it.sjNo) === normT_(sj); }) : [];
+      targetItems = (bySj.length ? bySj : itemsPR).map(function (it) { return it.no; }).filter(function (n) { return n !== null && n !== ''; }).join(',');
+    }
+  } catch (e) { /* daftar item tidak terbaca: link ditulis ke semua item PR saat rebuild */ }
+  rows.forEach(function (r) { r.items = targetItems; });
   var ss = db_(); appendRows_(ss, 'FOTO_SJ', rows); bumpDataVersion_();
-  log_(me.email, 'uploadSJ', prNo + (sj ? ' SJ ' + sj : '') + ' · ' + rows.length + ' foto → Surat Jalan/' + day);
-  return { saved: rows.length, folder: 'LoGistic Tracking / Surat Jalan / ' + day };
+  var link = writeFotoLinks_(keyOfPR_(prNo));
+  shareFotoWithPRTeam_(rows.map(function (r) { return r.fileId; }));
+  log_(me.email, 'uploadSJ', prNo + (sj ? ' SJ ' + sj : '') + ' · ' + rows.length + ' foto → Surat Jalan/' + day + (link.ok ? ' · link di kolom V' : ' · link tidak ditulis: ' + link.reason));
+  return { saved: rows.length, folder: 'LoGistic Tracking / Surat Jalan / ' + day, linkWritten: link.ok, linkNote: link.reason || '' };
 }
 /** Thumbnail semua foto 1 PR (untuk galeri). */
 function actFotoThumbs_(b) {
@@ -63,7 +75,61 @@ function actHapusFoto_(me, b) {
     try { DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) { }
     var o = stripRow_(r); o.status = 'dihapus'; o.note = (o.note ? o.note + ' · ' : '') + 'dihapus: ' + reason;
     updateRow_(ss, 'FOTO_SJ', r._row, o);
+    writeFotoLinks_(r.prKey);
     log_(me.email, 'hapusFoto', r.prNo + ' ' + r.fileName + ' (' + reason + ')');
     return { id: r.id };
   });
+}
+
+// ---------- link foto di Sheet Tracking PR (kolom V, setelah REMARKS) ----------
+var FOTO_COL = 22, FOTO_HEADER = 'FOTO SJ';
+/**
+ * Tulis ulang kolom V untuk semua item satu PR dari daftar FOTO_SJ aktif.
+ * Isi sel: "SJ 1301 (10-Nov) | SJ 1301 (10-Nov) #2" — tiap bagian bisa diklik ke file foto di Drive.
+ * Membangun ulang (bukan menambah) agar foto yang dihapus ikut hilang dari sel.
+ */
+function writeFotoLinks_(prKey) {
+  try {
+    var sh = prSheetW_(), live = prLive_(sh), items = live.parsed.items.filter(function (it) { return it.pr === prKey; });
+    if (!items.length) return { ok: false, reason: 'PR tidak ditemukan di Sheet' };
+    var fotos = readTable_(db_(), 'FOTO_SJ').filter(function (f) { return f.prKey === prKey && f.status !== 'dihapus'; })
+      .sort(function (a, b) { return (+a.uploadedAt || 0) - (+b.uploadedAt || 0); });
+    return prWrite_(function () {
+      var hdr = sh.getRange(live.hi + 1, FOTO_COL);
+      if (!pStr_(hdr.getValue())) hdr.setValue(FOTO_HEADER);
+      items.forEach(function (it) {
+        var mine = fotos.filter(function (f) {
+          var list = String(f.items || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+          return !list.length || list.indexOf(String(it.no)) >= 0;
+        });
+        var cell = sh.getRange(live.rowOf(it), FOTO_COL);
+        if (!mine.length) { if (pStr_(cell.getValue())) cell.setValue(''); return; }
+        var parts = [], seen = {};
+        mine.forEach(function (f) {
+          var base = (f.sjNo ? 'SJ ' + f.sjNo : 'Foto') + ' (' + shortDay_(f.folder) + ')';
+          seen[base] = (seen[base] || 0) + 1;
+          parts.push({ text: base + (seen[base] > 1 ? ' #' + seen[base] : ''), url: f.url });
+        });
+        var text = parts.map(function (p) { return p.text; }).join(' | '), b2 = SpreadsheetApp.newRichTextValue().setText(text), pos = 0;
+        parts.forEach(function (p) { b2.setLinkUrl(pos, pos + p.text.length, p.url); pos += p.text.length + 3; });
+        cell.setRichTextValue(b2.build());
+      });
+      try { SpreadsheetApp.flush(); } catch (e) { }
+      return { ok: true };
+    });
+  } catch (e) { return { ok: false, reason: e.code === 'forbidden' ? 'belum ada akses Editor ke Sheet Tracking PR' : (e.message || String(e)) }; }
+}
+function shortDay_(iso) { var M = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']; var p = String(iso || '').split('-'); return p.length === 3 ? (+p[2]) + '-' + M[+p[1] - 1] : String(iso || ''); }
+/** Agar link di Sheet bisa dibuka tim PR: beri akses lihat ke editor & viewer Sheet Tracking PR (file tetap tidak publik). */
+function shareFotoWithPRTeam_(fileIds) {
+  try {
+    var f = DriveApp.getFileById(cfg_().prId), me = String(Session.getEffectiveUser().getEmail() || '').toLowerCase(), emails = {};
+    var add = function (u) { try { var e = u.getEmail().toLowerCase(); if (e && e !== me) emails[e] = 1; } catch (x) { } };
+    try { add(f.getOwner()); } catch (x) { }
+    try { f.getEditors().forEach(add); } catch (x) { }
+    try { f.getViewers().forEach(add); } catch (x) { }
+    var list = Object.keys(emails).slice(0, 50);
+    if (!list.length) return;
+    fileIds.forEach(function (id) { try { DriveApp.getFileById(id).addViewers(list); } catch (x) { } });
+  } catch (e) { /* berbagi gagal: foto tetap tersimpan & tampil di aplikasi */ }
 }
