@@ -105,6 +105,28 @@ t('setKat: koreksi cepat 2 barang ke APD, kategori tidak valid ditolak, data lai
   assert.strictEqual(b.kat, 'APD'); assert.strictEqual(b.rak, 'C3', 'rak hasil edit tetap');
   const sv = g.post({ action: 'saveTx', token: tok, lines: [{ type: 'serah', key: k1, qty: 1, date: T, person: 'Joko', purpose: 'Rigger' }] }); assert.ok(sv.ok, sv.message);
 });
+t('Kendala PR: buat, validasi, geser komitmen wajib alasan, follow-up, selesai, batal', () => {
+  const it = pr.items[0];
+  const base = { action: 'saveKendala', token: tok, prNo: it.prNo, itemNo: it.no, itemId: it.id, itemDesc: it.desc, kategori: 'Vendor/Supplier', kendala: 'Stok supplier kosong', rencana: 'Cari vendor alternatif', pic: 'Rina (Procurement)', komitmen: '2026-11-12' };
+  assert.strictEqual(g.post(Object.assign({}, base, { pic: '' })).code, 'invalid');
+  assert.strictEqual(g.post(Object.assign({}, base, { komitmen: '' })).code, 'invalid');
+  assert.strictEqual(g.post(Object.assign({}, base, { token: undefined })).code, 'unauthorized', 'viewer tidak bisa menulis');
+  const c = g.post(base); assert.ok(c.ok, c.message);
+  const prLvl = g.post(Object.assign({}, base, { itemNo: '', itemId: '', kendala: 'Budget belum release', kategori: 'Budget/Harga' })); assert.ok(prLvl.ok);
+  let k = g.get({ action: 'pr' }).data.kendala; assert.strictEqual(k.length, 2);
+  assert.strictEqual(k.find(x => x.id === c.data.id).status, 'open');
+  assert.strictEqual(g.post(Object.assign({}, base, { id: c.data.id, komitmen: '2026-11-15' })).code, 'invalid', 'geser tanpa alasan ditolak');
+  assert.ok(g.post(Object.assign({}, base, { id: c.data.id, komitmen: '2026-11-15', alasanGeser: 'vendor minta tambahan 3 hari' })).ok);
+  assert.strictEqual(g.post({ action: 'kendalaStatus', token: tok, id: c.data.id, op: 'followup', note: '' }).code, 'invalid');
+  assert.ok(g.post({ action: 'kendalaStatus', token: tok, id: c.data.id, op: 'followup', note: 'Vendor B sanggup kirim 14 Nov' }).ok);
+  assert.ok(g.post({ action: 'kendalaStatus', token: tok, id: c.data.id, op: 'selesai', note: 'barang datang' }).ok);
+  assert.ok(g.post({ action: 'kendalaStatus', token: tok, id: prLvl.data.id, op: 'batal', note: 'salah input' }).ok);
+  k = g.get({ action: 'pr' }).data.kendala; const one = k.find(x => x.id === c.data.id);
+  assert.strictEqual(k.length, 1, 'yang batal tidak tampil'); assert.strictEqual(one.status, 'selesai'); assert.strictEqual(+one.geser, 1);
+  assert.strictEqual(one.komitmen, '2026-11-15'); assert.strictEqual(one.followup, 'Vendor B sanggup kirim 14 Nov');
+  assert.ok(/komitmen 2026-11-12 → 2026-11-15 \(vendor minta tambahan 3 hari\)/.test(one.riwayat), one.riwayat);
+  assert.strictEqual(String(one.itemNo), String(it.no));
+});
 t('seed kategori lama: 27 penanda masuk, dijalankan 2x tidak dobel', () => {
   g.seedKategoriAlatDariAppLama(); g.seedKategoriAlatDariAppLama();
   const ss = env.SpreadsheetApp.openById(env.__props.DB_ID); const rows = ss.getSheetByName('ITEMS').getLastRow() - 1;

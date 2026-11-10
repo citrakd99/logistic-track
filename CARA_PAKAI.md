@@ -12,6 +12,14 @@ Jika admin mengaktifkan **PIN viewer** (Pengaturan → PIN viewer), aplikasi mem
 - **Excel** mengunduh item yang sedang tampil. **Cetak / PDF** membuka dialog cetak; pilih *Simpan sebagai PDF*.
 - Data PR **tidak bisa diubah di aplikasi**. Perubahan dilakukan di Google Sheet Tracking PR oleh tim logistik, lalu muncul di aplikasi begitu tombol **↻ Muat ulang** ditekan. Tanpa menekan tombol itu, data diperbarui otomatis tiap 5 menit.
 
+### Kendala & action plan (Tracking PR)
+Untuk item/PR yang tersendat, admin mencatat **Kenapa** (kendala) · **Apa** (action plan) · **Siapa** (PIC) · **Kapan** (tanggal komitmen).
+- **Catat:** Daftar PR → buka item → **+ Kendala**. Untuk masalah yang menyangkut satu PR utuh (mis. budget), buka PR → **+ Kendala seluruh PR**.
+- **Pantau:** menu **Kendala & action plan** — kotak *Kendala terbuka · Komitmen lewat · Jatuh tempo ≤ 3 hari · Selesai*, ringkasan per PIC, cari, export Excel untuk rapat.
+- **Follow-up:** klik catatan → **Follow-up** (isi hasil konfirmasi ke PIC) · **Edit / geser tanggal** (alasan wajib, jumlah geser tercatat) · **Tandai selesai** · **Batalkan**.
+- Di Daftar PR, item/PR yang punya kendala diberi tanda **⚠** (merah jika komitmen sudah lewat). Chip filter *Ada kendala terbuka* / *Komitmen action lewat*.
+- Viewer (pemegang PIN) bisa melihat; hanya admin yang mengisi. Data disimpan di tab **KENDALA** pada Sheet Master; riwayat setiap perubahan ada di kolom *riwayat*.
+
 ### Stok Gudang
 - **Stok** = stok awal (Master) + barang masuk dari PR (Qty Terima) − dipakai − dipinjam + dikembalikan ± koreksi.
 - Tab **Stok**: cari barang, saring kategori, atau centang *Ada sisa PR* untuk melihat barang yang masih ditunggu kedatangannya.
