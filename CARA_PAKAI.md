@@ -14,6 +14,7 @@ Jika admin mengaktifkan **PIN viewer** (Pengaturan → PIN viewer), aplikasi mem
 
 ### Kendala & action plan (Tracking PR)
 Untuk item/PR yang tersendat, admin mencatat **Kenapa** (kendala) · **Apa** (action plan) · **Siapa** (PIC) · **Kapan** (tanggal komitmen).
+- **PIC** dipilih dari dropdown (awal: Fitri, Aqsha, Ahad, Anggun). Pilih **+ Tambah PIC baru…** untuk mengetik nama baru, yang otomatis masuk daftar. Atur daftar (tambah / hapus / urutan) di **Pengaturan → Daftar PIC**.
 - **Catat:** Daftar PR → buka item → **+ Kendala**. Untuk masalah yang menyangkut satu PR utuh (mis. budget), buka PR → **+ Kendala seluruh PR**.
 - **Pantau:** menu **Kendala & action plan** — kotak *Kendala terbuka · Komitmen lewat · Jatuh tempo ≤ 3 hari · Selesai*, ringkasan per PIC, cari, export Excel untuk rapat.
 - **Follow-up:** klik catatan → **Follow-up** (isi hasil konfirmasi ke PIC) · **Edit / geser tanggal** (alasan wajib, jumlah geser tercatat) · **Tandai selesai** · **Batalkan**.

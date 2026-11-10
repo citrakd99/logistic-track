@@ -127,6 +127,17 @@ t('Kendala PR: buat, validasi, geser komitmen wajib alasan, follow-up, selesai, 
   assert.ok(/komitmen 2026-11-12 → 2026-11-15 \(vendor minta tambahan 3 hari\)/.test(one.riwayat), one.riwayat);
   assert.strictEqual(String(one.itemNo), String(it.no));
 });
+t('Daftar PIC: default 4 nama, PIC baru otomatis masuk daftar, admin bisa atur ulang', () => {
+  let pl = g.get({ action: 'pr' }).data.picList; assert.strictEqual(JSON.stringify(pl.slice(0, 4)), '["Fitri","Aqsha","Ahad","Anggun"]');
+  assert.ok(pl.includes('Rina (Procurement)'), 'PIC dari kendala sebelumnya ikut masuk');
+  const it = pr.items[1];
+  assert.ok(g.post({ action: 'saveKendala', token: tok, prNo: it.prNo, itemNo: it.no, kategori: 'Lainnya', kendala: 'x', rencana: 'y', pic: '  fitri ', komitmen: '2026-11-20' }).ok);
+  const kk = g.get({ action: 'pr' }).data.kendala.find(k => k.kendala === 'x'); assert.strictEqual(kk.pic, 'Fitri', 'nama dibakukan ke daftar');
+  assert.strictEqual(g.post({ action: 'setPics', token: tok, pics: [] }).code, 'invalid');
+  assert.strictEqual(g.post({ action: 'setPics', pics: ['A'] }).code, 'unauthorized');
+  assert.ok(g.post({ action: 'setPics', token: tok, pics: ['Ahad', 'Fitri', 'fitri', ' Budi '] }).ok);
+  pl = g.get({ action: 'pr' }).data.picList; assert.strictEqual(JSON.stringify(pl), '["Ahad","Fitri","Budi"]');
+});
 t('seed kategori lama: 27 penanda masuk, dijalankan 2x tidak dobel', () => {
   g.seedKategoriAlatDariAppLama(); g.seedKategoriAlatDariAppLama();
   const ss = env.SpreadsheetApp.openById(env.__props.DB_ID); const rows = ss.getSheetByName('ITEMS').getLastRow() - 1;

@@ -397,7 +397,7 @@
   }
   function bindKendalaCards() { $$('.kcard[data-kid]').forEach(c => { c.onclick = () => openKendala(c.dataset.kid); c.onkeydown = e => { if (e.key === 'Enter') openKendala(c.dataset.kid); }; }); }
   const findK = id => (state.pr.kendala || []).find(k => k.id === id);
-  const picList = () => [...new Set((state.pr.kendala || []).map(k => k.pic).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'id'));
+  const picList = () => { const base = state.pr.picList || ['Fitri', 'Aqsha', 'Ahad', 'Anggun'], low = base.map(x => x.toLowerCase()); return base.concat((state.pr.kendala || []).map(k => k.pic).filter(p => p && !low.includes(p.toLowerCase())).filter((p, i, a) => a.indexOf(p) === i)); };
   function kTarget(k) {
     const it = k.itemNo !== '' && k.itemNo != null ? state.pr.items.find(i => i.pr === k.prKey && String(i.no) === String(k.itemNo)) : null;
     return `${k.prNo}${k.itemNo !== '' && k.itemNo != null ? ' · item ' + k.itemNo : ' · seluruh PR'}${it ? ' — ' + it.desc : k.itemDesc ? ' — ' + k.itemDesc : ''}`;
@@ -428,20 +428,23 @@
           <div class="f wide"><label for="kKat">Kategori kendala</label><select class="inp" id="kKat">${K_KAT.map(c => `<option ${(k ? k.kategori : '') === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <div class="f wide"><label for="kWhy">Kenapa — kendalanya apa?</label><textarea class="inp" id="kWhy" placeholder="mis. Stok di supplier kosong, indent 2 minggu">${k ? esc(k.kendala) : ''}</textarea></div>
           <div class="f wide"><label for="kWhat">Apa — action plan</label><textarea class="inp" id="kWhat" placeholder="mis. Cari vendor alternatif & minta penawaran">${k ? esc(k.action) : ''}</textarea></div>
-          <div class="f"><label for="kPic">Siapa — PIC</label><input class="inp" id="kPic" list="dlPic" autocomplete="off" placeholder="Nama (divisi)" value="${k ? esc(k.pic) : ''}">${dl('dlPic', picList())}</div>
+          <div class="f"><label for="kPicSel">Siapa — PIC</label><select class="inp" id="kPicSel"><option value="">— pilih PIC —</option>${picList().map(p => `<option ${k && k.pic === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}<option value="__new">+ Tambah PIC baru…</option></select>
+            <input class="inp" id="kPicNew" placeholder="Nama PIC baru" maxlength="40" hidden style="margin-top:6px"></div>
           <div class="f"><label for="kWhen">Kapan — tanggal komitmen</label><input class="inp" type="date" id="kWhen" value="${k ? esc(k.komitmen) : ''}"></div>
           ${k ? '<div class="f wide" id="kGeserBox" hidden><label for="kGeser">Alasan tanggal komitmen digeser</label><input class="inp" id="kGeser" placeholder="wajib jika tanggal berubah"></div>' : ''}
         </div><div id="kErr"></div>`,
       foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="kSave">Simpan</button>'
     });
     if (k) $('#kWhen').oninput = () => { $('#kGeserBox').hidden = val('kWhen') === k.komitmen; };
+    const picVal = () => $('#kPicSel').value === '__new' ? val('kPicNew') : $('#kPicSel').value;
+    $('#kPicSel').onchange = () => { const n = $('#kPicSel').value === '__new'; $('#kPicNew').hidden = !n; if (n) $('#kPicNew').focus(); };
     $('#kSave').onclick = () => {
-      if (!val('kWhy') || !val('kWhat') || !val('kPic') || !val('kWhen')) { showErr('kErr', 'Isi lengkap: kenapa, action, PIC, dan tanggal komitmen.'); return; }
+      if (!val('kWhy') || !val('kWhat') || !picVal() || !val('kWhen')) { showErr('kErr', 'Isi lengkap: kenapa, action, PIC, dan tanggal komitmen.'); return; }
       if (k && val('kWhen') !== k.komitmen && !val('kGeser')) { showErr('kErr', 'Tanggal komitmen berubah: isi alasannya.'); return; }
       const body = Object.assign(k ? { id: k.id } : { prNo: t.prNo, itemNo: t.itemNo, itemId: t.itemId, itemDesc: t.itemDesc },
-        { kategori: val('kKat'), kendala: val('kWhy'), rencana: val('kWhat'), pic: val('kPic'), komitmen: val('kWhen'), alasanGeser: k ? val('kGeser') : '' });
+        { kategori: val('kKat'), kendala: val('kWhy'), rencana: val('kWhat'), pic: picVal(), komitmen: val('kWhen'), alasanGeser: k ? val('kGeser') : '' });
       submit('kSave', 'kErr', () => apiPost('saveKendala', body), k ? 'Kendala diperbarui' : 'Kendala dicatat',
-        { title: k ? 'Simpan perubahan kendala?' : 'Catat kendala baru?', rows: [['Untuk', esc(kTarget(Object.assign({ prKey: '' }, t)))], ['Kenapa', esc(body.kendala)], ['Action', esc(body.rencana)], ['PIC', `<b>${esc(body.pic)}</b>`],
+        { title: k ? 'Simpan perubahan kendala?' : 'Catat kendala baru?', rows: [['Untuk', esc(kTarget(Object.assign({ prKey: '' }, t)))], ['Kenapa', esc(body.kendala)], ['Action', esc(body.rencana)], ['PIC', `<b>${esc(body.pic)}</b>${$('#kPicSel').value === '__new' ? ' <span class="dim">(PIC baru, ditambahkan ke daftar)</span>' : ''}`],
           ['Komitmen', k && k.komitmen !== body.komitmen ? `<s class="dim">${esc(fmtD(k.komitmen, true))}</s> → <b>${esc(fmtD(body.komitmen, true))}</b> (${esc(body.alasanGeser)})` : `<b>${esc(fmtD(body.komitmen, true))}</b>`]] });
     };
   }
@@ -951,6 +954,10 @@
         ${st.bound ? '' : `<div class="f"><label for="cMs">Link Master Stok <span class="dim">(opsional)</span></label><input class="inp" id="cMs" value="${st.master ? esc(st.master.url || '') : ''}"></div>
         <div class="f"><label for="cDb">Link Data Sheet <span class="dim">(kosongkan untuk dibuat otomatis)</span></label><input class="inp" id="cDb" value="${st.db ? esc(st.db.url || '') : ''}"></div>`}
         <div id="cErr"></div><div><button class="btn primary" id="cSave">Uji & simpan</button></div></section>
+      <section class="card"><h2>Daftar PIC</h2>
+        <p class="hint">Pilihan PIC di form kendala & action plan. Menghapus nama dari daftar tidak mengubah catatan lama.</p>
+        <div id="picRows">${(st.picList || []).map((p, i) => `<div class="adm"><span>${esc(p)}</span><span><button class="btn sm ghost" data-pmv="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan">↑</button><button class="btn sm danger" data-prm="${i}">Hapus</button></span></div>`).join('')}</div>
+        <div style="display:flex;gap:8px"><input class="inp" id="picNew" placeholder="Nama PIC baru" maxlength="40"><button class="btn" id="picAdd">Tambah</button></div><div id="picErr"></div></section>
       <section class="card"><h2>PIN viewer</h2>
         <p class="hint">${st.pin ? `<b>Aktif</b> sejak ${esc(fmtDT(st.pinAt))}. Hanya orang yang memasukkan PIN (atau admin yang login) yang bisa melihat data.` : '<b>Mati</b>. Siapa pun yang punya link situs bisa melihat data PR & stok.'}</p>
         <div class="f"><label for="vPin">${st.pin ? 'PIN baru' : 'PIN'} (6–12 digit)</label><input class="inp mono" id="vPin" type="password" inputmode="numeric" maxlength="12" autocomplete="new-password"></div>
@@ -973,6 +980,11 @@
     };
     const cs = $('#cSync'); if (cs) cs.onclick = async () => { cs.disabled = true; cs.textContent = 'Menyalin…'; try { await apiPost('syncPR'); state.pr = null; state.stock = null; toast('Tracking PR disalin ke Master'); render(); } catch (e) { showErr('cErr', e.message); cs.disabled = false; cs.textContent = 'Sinkron sekarang'; } };
     const ca = $('#cAuto'); if (ca) ca.onclick = async () => { ca.disabled = true; try { await apiPost('setAutoSync', { on: !st.autoSync }); toast(st.autoSync ? 'Sinkron otomatis dimatikan' : 'Sinkron otomatis aktif tiap 10 menit'); render(); } catch (e) { showErr('cErr', e.message); ca.disabled = false; } };
+    const savePics = async (list, msg) => { try { await apiPost('setPics', { pics: list }); if (state.pr) state.pr.picList = list; toast(msg); render(); } catch (e) { showErr('picErr', e.message); } };
+    $('#picAdd').onclick = () => { const n = val('picNew'); if (!n) return; if ((st.picList || []).some(p => p.toLowerCase() === n.toLowerCase())) { showErr('picErr', 'Nama sudah ada.'); return; } savePics((st.picList || []).concat(n), 'PIC ditambahkan'); };
+    $('#picNew').onkeydown = e => { if (e.key === 'Enter') $('#picAdd').click(); };
+    $$('[data-prm]').forEach(b => b.onclick = async () => { const p = st.picList[+b.dataset.prm]; if (!(await confirmBox({ title: 'Hapus PIC dari daftar?', rows: [['PIC', esc(p)]], note: 'Catatan kendala lama dengan PIC ini tidak berubah.', ok: 'Ya, hapus', danger: true }))) return; savePics(st.picList.filter((_, i) => i !== +b.dataset.prm), 'PIC dihapus dari daftar'); });
+    $$('[data-pmv]').forEach(b => b.onclick = () => { const i = +b.dataset.pmv, l = st.picList.slice(); [l[i - 1], l[i]] = [l[i], l[i - 1]]; savePics(l, 'Urutan PIC disimpan'); });
     $('#vSet').onclick = async () => { if (!(await confirmBox({ title: st.pin ? 'Ganti PIN viewer?' : 'Aktifkan PIN viewer?', note: st.pin ? 'Semua perangkat viewer harus memasukkan PIN baru.' : 'Viewer harus memasukkan PIN untuk melihat data.', ok: st.pin ? 'Ya, ganti' : 'Ya, aktifkan' }))) return; try { await apiPost('setViewerPin', { pin: val('vPin') }); toast(st.pin ? 'PIN diganti' : 'PIN viewer aktif'); render(); } catch (e) { showErr('vErr', e.message); } };
     const vo = $('#vOff'); if (vo) vo.onclick = async () => { if (!(await confirmBox({ title: 'Matikan PIN viewer?', note: 'Data PR & stok akan bisa dilihat siapa pun yang punya link.', ok: 'Ya, matikan', danger: true }))) return; try { await apiPost('setViewerPin', { off: true }); toast('PIN dimatikan'); render(); } catch (e) { showErr('vErr', e.message); } };
     $('#nAdd').onclick = async () => { try { await apiPost('addAdmin', { name: val('nName'), email: val('nEmail'), password: $('#nPw').value }); toast('Admin ditambahkan'); render(); } catch (e) { showErr('nErr', e.message); } };
@@ -995,7 +1007,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.6.0';
+    $('#ver').textContent = 'v1.6.1';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }
