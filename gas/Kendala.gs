@@ -20,16 +20,31 @@ function actSetPics_(me, b) {
   var seen = {}, l = (Array.isArray(b.pics) ? b.pics : []).map(cleanPic_).filter(function (p) { var k = p.toLowerCase(); if (!p || seen[k]) return false; seen[k] = 1; return true; });
   if (!l.length) fail_('invalid', 'Minimal 1 PIC.');
   if (l.length > 50) fail_('invalid', 'Maksimal 50 PIC.');
-  savePics_(l); bumpDataVersion_(); log_(me.email, 'setPics', l.join(', '));
+  savePics_(l); bumpDataVersion_(); rapikanTabKendala_(); log_(me.email, 'setPics', l.join(', '));
   return { picList: l };
 }
 
 var KENDALA_KAT = ['Budget/Harga', 'Approval CC', 'Vendor/Supplier', 'Spesifikasi', 'Pengiriman', 'Administrasi PO', 'Lainnya'];
 
 function listKendala_() {
-  try {
-    return readTable_(db_(), 'KENDALA').map(stripRow_).filter(function (k) { return k.status !== 'batal'; });
-  } catch (e) { return []; } // Data Sheet belum diatur: Tracking PR tetap tampil
+  var rows;
+  try { rows = readTable_(db_(), 'KENDALA'); } catch (e) { return []; } // Data Sheet belum diatur: Tracking PR tetap tampil
+  var t = todayISO_();
+  return rows.map(function (r) {
+    var k = stripRow_(r);
+    // nilai yang diketik langsung di Sheet dinormalkan
+    k.status = String(k.status || 'open').trim().toLowerCase();
+    if (k.komitmen && !isISO_(String(k.komitmen))) k.komitmen = pDate_(k.komitmen, t)[0] || String(k.komitmen);
+    if (!k.prKey && k.prNo) k.prKey = keyOfPR_(k.prNo);
+    if (k.itemNo !== '' && k.itemNo != null) k.itemNo = String(k.itemNo);
+    if (!k.id) k.id = 'row' + r._row; // baris baru dari Sheet sebelum trigger memberi ID
+    return k;
+  }).filter(function (k) { return k.status !== 'batal' && (k.prNo || k.kendala); });
+}
+/** Cari baris kendala berdasarkan id (termasuk id sementara "rowN" untuk baris yang diketik di Sheet). */
+function findKendalaRow_(rows, id) {
+  var m = /^row(\d+)$/.exec(String(id || ''));
+  return rows.filter(function (r) { return m ? r._row === +m[1] : r.id === id; })[0];
 }
 function stamp_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'); }
 function addRiwayat_(row, me, text) { row.riwayat = (String(row.riwayat || '') + '\n' + stamp_() + ' · ' + me.email.split('@')[0] + ': ' + text).trim().slice(-4000); }
@@ -46,9 +61,11 @@ function actSaveKendala_(me, b) {
   return withLock_(function () {
     var ss = db_(), rows = readTable_(ss, 'KENDALA'), now = Date.now();
     if (b.id) {
-      var old = rows.filter(function (r) { return r.id === b.id; })[0];
+      var old = findKendalaRow_(rows, b.id);
       if (!old) fail_('invalid', 'Catatan kendala tidak ditemukan.');
       var r = stripRow_(old), changes = [];
+      if (!r.id) r.id = 'k' + now.toString(36) + Utilities.getUuid().slice(0, 4);
+      if (r.komitmen && !isISO_(String(r.komitmen))) r.komitmen = pDate_(r.komitmen, todayISO_())[0];
       if (String(r.komitmen) !== komitmen) {
         var alasan = pStr_(b.alasanGeser);
         if (!alasan) fail_('invalid', 'Tanggal komitmen berubah: alasan wajib diisi.');
@@ -86,9 +103,11 @@ function actKendalaStatus_(me, b) {
   if (['followup', 'selesai', 'buka', 'batal'].indexOf(op) < 0) fail_('invalid', 'Aksi kendala tidak dikenal.');
   if ((op === 'followup' || op === 'batal' || op === 'buka') && !note) fail_('invalid', op === 'followup' ? 'Isi hasil follow-up.' : 'Alasan wajib diisi.');
   return withLock_(function () {
-    var ss = db_(), rows = readTable_(ss, 'KENDALA'), old = rows.filter(function (r) { return r.id === b.id; })[0];
+    var ss = db_(), rows = readTable_(ss, 'KENDALA'), old = findKendalaRow_(rows, b.id);
     if (!old) fail_('invalid', 'Catatan kendala tidak ditemukan.');
     var r = stripRow_(old), now = Date.now();
+    if (!r.id) r.id = 'k' + now.toString(36) + Utilities.getUuid().slice(0, 4);
+    r.status = String(r.status || 'open').trim().toLowerCase();
     if (op === 'followup') { r.followup = note; r.followupAt = now; addRiwayat_(r, me, 'follow-up: ' + note); }
     if (op === 'selesai') { if (r.status === 'selesai') fail_('invalid', 'Sudah selesai.'); r.status = 'selesai'; r.selesaiAt = now; addRiwayat_(r, me, 'SELESAI' + (note ? ': ' + note : '')); }
     if (op === 'buka') { r.status = 'open'; r.selesaiAt = ''; addRiwayat_(r, me, 'dibuka lagi: ' + note); }

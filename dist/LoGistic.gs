@@ -10,7 +10,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.6.1';
+var APP_VERSION = '1.7.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -89,7 +89,8 @@ function staleFiles_() {
   if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
   if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
   if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
-  if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0) stale.push('Kendala.gs');
+  if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
+  if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
   return stale;
 }
 function actStatus_() {
@@ -150,6 +151,8 @@ function actSetSources_(me, b) {
   res.pr.copied = !!loadPR_(true);
   bumpDataVersion_();
   res.katDropdown = ensureKatValidation_();
+  ensureTab_(SpreadsheetApp.openById(dbId), 'KENDALA', TABS.KENDALA);
+  res.sheetEdit = rapikanTabKendala_() && ensureEditTrigger_();
   log_(me.email, 'setSources', 'PR=' + prId + ' MASTER=' + (masterId || '-') + ' DB=' + dbId);
   res.settings = actGetSettings_();
   return res;
@@ -167,6 +170,7 @@ function setup() {
   if (b) {
     Object.keys(TABS).forEach(function (t) { ensureTab_(b, t, TABS[t]); });
     console.log(ensureKatValidation_() ? 'Dropdown kategori MASTER: Material, Alat, APD.' : 'Dropdown kategori tidak dipasang (header "Nama Barang" tidak ditemukan).');
+    aktifkanEditDariSheet();
     console.log('Script terpasang di "' + b.getName() + '": Master & Data Sheet = file ini (tab MASTER, TX, ITEMS, LOG, PR_DATA).');
   }
   if (needsSetup_()) {
@@ -207,6 +211,7 @@ function onOpen() {
       .addItem('Sinkron Tracking PR sekarang', 'syncPR')
       .addItem('Nyalakan sinkron otomatis (10 menit)', 'pasangSinkronOtomatis')
       .addItem('Pasang dropdown kategori (Material/Alat/APD)', 'pasangDropdownKategori')
+      .addItem('Aktifkan edit dari Sheet (tab KENDALA)', 'aktifkanEditDariSheet')
       .addToUi();
   } catch (e) { /* bukan konteks Sheet */ }
 }
@@ -409,7 +414,7 @@ var TABS = {
   KENDALA: ['id', 'prKey', 'prNo', 'itemNo', 'itemId', 'itemDesc', 'kategori', 'kendala', 'action', 'pic', 'komitmen', 'status', 'selesaiAt', 'followup', 'followupAt', 'geser', 'riwayat', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']
 };
 // kolom yang dipaksa teks agar Sheets tidak mengubah "3/4 inch" atau tanggal jadi nilai lain
-var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], KENDALA: ['selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
+var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], KENDALA: ['komitmen', 'selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
 
 function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); }
 function props_() { return PropertiesService.getScriptProperties(); }
@@ -585,7 +590,7 @@ function readTable_(ss, name) {
     var o = { _row: i + 2 };
     head.forEach(function (h, j) { var v = r[j]; o[h] = isDate_(v) ? Utilities.formatDate(v, tz_(), 'yyyy-MM-dd') : v; });
     return o;
-  }).filter(function (o) { return o[head[0]] !== '' && o[head[0]] !== null; });
+  }).filter(function (o) { return head.some(function (h) { return o[h] !== '' && o[h] !== null && o[h] !== false; }); }); // baris kosong dilewati (baris dari Sheet boleh tanpa id)
 }
 function appendRows_(ss, name, objs) {
   if (!objs.length) return;
@@ -907,16 +912,31 @@ function actSetPics_(me, b) {
   var seen = {}, l = (Array.isArray(b.pics) ? b.pics : []).map(cleanPic_).filter(function (p) { var k = p.toLowerCase(); if (!p || seen[k]) return false; seen[k] = 1; return true; });
   if (!l.length) fail_('invalid', 'Minimal 1 PIC.');
   if (l.length > 50) fail_('invalid', 'Maksimal 50 PIC.');
-  savePics_(l); bumpDataVersion_(); log_(me.email, 'setPics', l.join(', '));
+  savePics_(l); bumpDataVersion_(); rapikanTabKendala_(); log_(me.email, 'setPics', l.join(', '));
   return { picList: l };
 }
 
 var KENDALA_KAT = ['Budget/Harga', 'Approval CC', 'Vendor/Supplier', 'Spesifikasi', 'Pengiriman', 'Administrasi PO', 'Lainnya'];
 
 function listKendala_() {
-  try {
-    return readTable_(db_(), 'KENDALA').map(stripRow_).filter(function (k) { return k.status !== 'batal'; });
-  } catch (e) { return []; } // Data Sheet belum diatur: Tracking PR tetap tampil
+  var rows;
+  try { rows = readTable_(db_(), 'KENDALA'); } catch (e) { return []; } // Data Sheet belum diatur: Tracking PR tetap tampil
+  var t = todayISO_();
+  return rows.map(function (r) {
+    var k = stripRow_(r);
+    // nilai yang diketik langsung di Sheet dinormalkan
+    k.status = String(k.status || 'open').trim().toLowerCase();
+    if (k.komitmen && !isISO_(String(k.komitmen))) k.komitmen = pDate_(k.komitmen, t)[0] || String(k.komitmen);
+    if (!k.prKey && k.prNo) k.prKey = keyOfPR_(k.prNo);
+    if (k.itemNo !== '' && k.itemNo != null) k.itemNo = String(k.itemNo);
+    if (!k.id) k.id = 'row' + r._row; // baris baru dari Sheet sebelum trigger memberi ID
+    return k;
+  }).filter(function (k) { return k.status !== 'batal' && (k.prNo || k.kendala); });
+}
+/** Cari baris kendala berdasarkan id (termasuk id sementara "rowN" untuk baris yang diketik di Sheet). */
+function findKendalaRow_(rows, id) {
+  var m = /^row(\d+)$/.exec(String(id || ''));
+  return rows.filter(function (r) { return m ? r._row === +m[1] : r.id === id; })[0];
 }
 function stamp_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'); }
 function addRiwayat_(row, me, text) { row.riwayat = (String(row.riwayat || '') + '\n' + stamp_() + ' · ' + me.email.split('@')[0] + ': ' + text).trim().slice(-4000); }
@@ -933,9 +953,11 @@ function actSaveKendala_(me, b) {
   return withLock_(function () {
     var ss = db_(), rows = readTable_(ss, 'KENDALA'), now = Date.now();
     if (b.id) {
-      var old = rows.filter(function (r) { return r.id === b.id; })[0];
+      var old = findKendalaRow_(rows, b.id);
       if (!old) fail_('invalid', 'Catatan kendala tidak ditemukan.');
       var r = stripRow_(old), changes = [];
+      if (!r.id) r.id = 'k' + now.toString(36) + Utilities.getUuid().slice(0, 4);
+      if (r.komitmen && !isISO_(String(r.komitmen))) r.komitmen = pDate_(r.komitmen, todayISO_())[0];
       if (String(r.komitmen) !== komitmen) {
         var alasan = pStr_(b.alasanGeser);
         if (!alasan) fail_('invalid', 'Tanggal komitmen berubah: alasan wajib diisi.');
@@ -973,9 +995,11 @@ function actKendalaStatus_(me, b) {
   if (['followup', 'selesai', 'buka', 'batal'].indexOf(op) < 0) fail_('invalid', 'Aksi kendala tidak dikenal.');
   if ((op === 'followup' || op === 'batal' || op === 'buka') && !note) fail_('invalid', op === 'followup' ? 'Isi hasil follow-up.' : 'Alasan wajib diisi.');
   return withLock_(function () {
-    var ss = db_(), rows = readTable_(ss, 'KENDALA'), old = rows.filter(function (r) { return r.id === b.id; })[0];
+    var ss = db_(), rows = readTable_(ss, 'KENDALA'), old = findKendalaRow_(rows, b.id);
     if (!old) fail_('invalid', 'Catatan kendala tidak ditemukan.');
     var r = stripRow_(old), now = Date.now();
+    if (!r.id) r.id = 'k' + now.toString(36) + Utilities.getUuid().slice(0, 4);
+    r.status = String(r.status || 'open').trim().toLowerCase();
     if (op === 'followup') { r.followup = note; r.followupAt = now; addRiwayat_(r, me, 'follow-up: ' + note); }
     if (op === 'selesai') { if (r.status === 'selesai') fail_('invalid', 'Sudah selesai.'); r.status = 'selesai'; r.selesaiAt = now; addRiwayat_(r, me, 'SELESAI' + (note ? ': ' + note : '')); }
     if (op === 'buka') { r.status = 'open'; r.selesaiAt = ''; addRiwayat_(r, me, 'dibuka lagi: ' + note); }
@@ -985,6 +1009,104 @@ function actKendalaStatus_(me, b) {
     log_(me.email, 'kendala:' + op, r.prNo + ' ' + note.slice(0, 80));
     return { id: r.id, status: r.status };
   });
+}
+
+// ===== SheetEdit.gs =====
+/**
+ * SheetEdit.gs — supaya data bisa diedit DUA ARAH: dari aplikasi dan langsung dari Google Sheet.
+ * - Tab KENDALA dirapikan: dropdown status/kategori/PIC, kolom tanggal komitmen berupa tanggal,
+ *   kolom teknis disembunyikan.
+ * - Trigger "saat Sheet diedit": baris kendala baru dari Sheet otomatis diberi ID, setiap perubahan
+ *   dicatat di riwayat, dan aplikasi langsung membaca data terbaru (cache dibersihkan).
+ * - Tab TX, ITEMS, LOG, PR_DATA diberi peringatan sebelum diedit (sebaiknya lewat aplikasi).
+ */
+var K_HIDE = ['prKey', 'itemId', 'selesaiAt', 'followupAt', 'createdAt', 'updatedAt'];
+var K_STATUS = ['open', 'selesai', 'batal'];
+
+function colOf_(name, h) { return TABS[name].indexOf(h) + 1; }
+
+/** Rapikan tab KENDALA untuk diedit manusia (aman dijalankan berulang). */
+function rapikanTabKendala_() {
+  try {
+    var ss = db_(), sh = ss.getSheetByName('KENDALA'); if (!sh) return false;
+    var n = Math.max(1, sh.getMaxRows() - 1), V = SpreadsheetApp.newDataValidation;
+    var list = function (col, vals, help) { sh.getRange(2, colOf_('KENDALA', col), n, 1).setDataValidation(V().requireValueInList(vals, true).setAllowInvalid(col === 'pic').setHelpText(help).build()); };
+    list('status', K_STATUS, 'open = belum selesai · selesai · batal');
+    list('kategori', KENDALA_KAT, 'Kategori kendala');
+    list('pic', picList_(), 'Pilih PIC; nama lain boleh diketik (akan ditambahkan ke daftar)');
+    var kc = colOf_('KENDALA', 'komitmen'), kr = sh.getRange(2, kc, n, 1);
+    kr.setDataValidation(V().requireDate().setAllowInvalid(false).setHelpText('Tanggal komitmen (klik dua kali untuk kalender)').build());
+    // ubah teks "2026-11-15" (format lama) menjadi tanggal sungguhan
+    var lr = sh.getLastRow();
+    if (lr >= 2) {
+      var vals = sh.getRange(2, kc, lr - 1, 1).getValues(), changed = false;
+      vals = vals.map(function (r) { var v = r[0]; if (typeof v === 'string' && isISO_(v.trim())) { changed = true; var p = v.trim().split('-'); return [new Date(+p[0], +p[1] - 1, +p[2])]; } return [v]; });
+      kr.setNumberFormat('yyyy-mm-dd');
+      if (changed) sh.getRange(2, kc, lr - 1, 1).setValues(vals);
+    } else kr.setNumberFormat('yyyy-mm-dd');
+    K_HIDE.forEach(function (h) { try { sh.hideColumns(colOf_('KENDALA', h)); } catch (e) { /* abaikan */ } });
+    [['kendala', 260], ['action', 260], ['riwayat', 320], ['itemDesc', 200], ['pic', 120], ['followup', 220]].forEach(function (w) { try { sh.setColumnWidth(colOf_('KENDALA', w[0]), w[1]); } catch (e) { } });
+    sh.setFrozenRows(1);
+    ['TX', 'ITEMS', 'LOG', 'PR_DATA'].forEach(function (t) {
+      var s2 = ss.getSheetByName(t); if (!s2) return;
+      try { if (!s2.getProtections || !s2.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) s2.protect().setDescription('Diisi oleh aplikasi LoGistic Tracking').setWarningOnly(true); } catch (e) { }
+    });
+    return true;
+  } catch (e) { return false; }
+}
+
+/** Pasang trigger "saat Sheet diedit" (sekali; aman dijalankan berulang). */
+function ensureEditTrigger_() {
+  try {
+    var id = cfg_().dbId; if (!id) return false;
+    var has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'saatSheetDiedit'; });
+    if (!has) ScriptApp.newTrigger('saatSheetDiedit').forSpreadsheet(id).onEdit().create();
+    return true;
+  } catch (e) { return false; }
+}
+
+/** Trigger edit: dipanggil Google setiap ada sel yang diedit langsung di Sheet. */
+function saatSheetDiedit(e) {
+  if (!e || !e.range) return;
+  var sh = e.range.getSheet(), name = sh.getName(), row = e.range.getRow();
+  if (name.trim().toUpperCase() === 'MASTER') { bumpMasterRev_(); bumpDataVersion_(); return; }
+  if (name === 'TX' || name === 'ITEMS') { bumpDataVersion_(); return; }
+  if (name !== 'KENDALA' || row < 2) return;
+  var cols = TABS.KENDALA, nr = e.range.getNumRows ? e.range.getNumRows() : 1;
+  var rng = sh.getRange(row, 1, nr, cols.length), vals = rng.getValues(), now = Date.now(), changed = false;
+  var editedCol = e.range.getColumn(), header = cols[editedCol - 1] || '';
+  vals.forEach(function (r) {
+    var o = {}; cols.forEach(function (c, i) { o[c] = r[i]; });
+    if (!o.prNo && !o.kendala) return; // baris kosong
+    if (!o.id) { o.id = 'k' + now.toString(36) + Utilities.getUuid().slice(0, 4); o.createdAt = now; o.createdBy = 'Sheet'; o.riwayat = stamp_() + ' · Sheet: dibuat dari Sheet'; o.geser = 0; }
+    if (o.prNo) o.prKey = keyOfPR_(o.prNo);
+    if (!o.status) o.status = 'open';
+    o.status = String(o.status).trim().toLowerCase();
+    if (o.pic) o.pic = ensurePic_(cleanPic_(o.pic));
+    if (header && header !== 'riwayat' && nr === 1 && e.oldValue !== undefined && String(e.oldValue) !== String(e.value)) {
+      var old = e.oldValue, nv = e.value;
+      if (header === 'komitmen') { o.geser = (+o.geser || 0) + 1; old = sheetDate_(old); nv = sheetDate_(nv); }
+      if (header === 'status' && o.status === 'selesai' && !o.selesaiAt) o.selesaiAt = now;
+      o.riwayat = (String(o.riwayat || '') + '\n' + stamp_() + ' · Sheet: ' + header + ' ' + (old || '-') + ' → ' + (nv || '-')).trim().slice(-4000);
+    }
+    o.updatedAt = now; o.updatedBy = 'Sheet';
+    cols.forEach(function (c, i) { if (r[i] !== o[c]) { r[i] = o[c]; changed = true; } });
+  });
+  if (changed) rng.setValues(vals);
+  bumpDataVersion_();
+}
+/** Nilai tanggal dari event edit (angka serial Sheets / teks) → yyyy-mm-dd. */
+function sheetDate_(v) {
+  if (v === undefined || v === null || v === '') return '';
+  var n = Number(v);
+  if (!isNaN(n) && n > 20000 && n < 80000) return Utilities.formatDate(new Date(Math.round((n - 25569) * 864e5)), 'UTC', 'yyyy-MM-dd');
+  return pDate_(v, todayISO_())[0] || String(v);
+}
+
+/** Menu / editor: rapikan tab KENDALA & pasang trigger edit. */
+function aktifkanEditDariSheet() {
+  var a = rapikanTabKendala_(), b = ensureEditTrigger_();
+  console.log((a ? 'Tab KENDALA dirapikan (dropdown, tanggal, kolom teknis disembunyikan). ' : 'Tab KENDALA belum ada. ') + (b ? 'Trigger edit Sheet aktif.' : 'Trigger edit gagal dipasang.'));
 }
 
 // ===== Logic.gs =====

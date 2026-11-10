@@ -11,7 +11,7 @@ var TABS = {
   KENDALA: ['id', 'prKey', 'prNo', 'itemNo', 'itemId', 'itemDesc', 'kategori', 'kendala', 'action', 'pic', 'komitmen', 'status', 'selesaiAt', 'followup', 'followupAt', 'geser', 'riwayat', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']
 };
 // kolom yang dipaksa teks agar Sheets tidak mengubah "3/4 inch" atau tanggal jadi nilai lain
-var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], KENDALA: ['selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
+var NUM_COLS = { TX: ['qty', 'createdAt', 'void', 'voidAt'], ITEMS: ['awal', 'min', 'hidden', 'full', 'updatedAt'], LOG: ['at'], KENDALA: ['komitmen', 'selesaiAt', 'followupAt', 'geser', 'createdAt', 'updatedAt'] };
 
 function isDate_(v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); }
 function props_() { return PropertiesService.getScriptProperties(); }
@@ -187,7 +187,7 @@ function readTable_(ss, name) {
     var o = { _row: i + 2 };
     head.forEach(function (h, j) { var v = r[j]; o[h] = isDate_(v) ? Utilities.formatDate(v, tz_(), 'yyyy-MM-dd') : v; });
     return o;
-  }).filter(function (o) { return o[head[0]] !== '' && o[head[0]] !== null; });
+  }).filter(function (o) { return head.some(function (h) { return o[h] !== '' && o[h] !== null && o[h] !== false; }); }); // baris kosong dilewati (baris dari Sheet boleh tanpa id)
 }
 function appendRows_(ss, name, objs) {
   if (!objs.length) return;

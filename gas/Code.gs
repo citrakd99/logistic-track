@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.6.1';
+var APP_VERSION = '1.7.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -85,7 +85,8 @@ function staleFiles_() {
   if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
   if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
   if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
-  if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0) stale.push('Kendala.gs');
+  if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
+  if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
   return stale;
 }
 function actStatus_() {
@@ -146,6 +147,8 @@ function actSetSources_(me, b) {
   res.pr.copied = !!loadPR_(true);
   bumpDataVersion_();
   res.katDropdown = ensureKatValidation_();
+  ensureTab_(SpreadsheetApp.openById(dbId), 'KENDALA', TABS.KENDALA);
+  res.sheetEdit = rapikanTabKendala_() && ensureEditTrigger_();
   log_(me.email, 'setSources', 'PR=' + prId + ' MASTER=' + (masterId || '-') + ' DB=' + dbId);
   res.settings = actGetSettings_();
   return res;
@@ -163,6 +166,7 @@ function setup() {
   if (b) {
     Object.keys(TABS).forEach(function (t) { ensureTab_(b, t, TABS[t]); });
     console.log(ensureKatValidation_() ? 'Dropdown kategori MASTER: Material, Alat, APD.' : 'Dropdown kategori tidak dipasang (header "Nama Barang" tidak ditemukan).');
+    aktifkanEditDariSheet();
     console.log('Script terpasang di "' + b.getName() + '": Master & Data Sheet = file ini (tab MASTER, TX, ITEMS, LOG, PR_DATA).');
   }
   if (needsSetup_()) {
@@ -203,6 +207,7 @@ function onOpen() {
       .addItem('Sinkron Tracking PR sekarang', 'syncPR')
       .addItem('Nyalakan sinkron otomatis (10 menit)', 'pasangSinkronOtomatis')
       .addItem('Pasang dropdown kategori (Material/Alat/APD)', 'pasangDropdownKategori')
+      .addItem('Aktifkan edit dari Sheet (tab KENDALA)', 'aktifkanEditDariSheet')
       .addToUi();
   } catch (e) { /* bukan konteks Sheet */ }
 }
