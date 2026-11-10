@@ -12,7 +12,7 @@ function stockContext_(ss, fresh) {
 
 function actPR_(fresh) {
   var pr = loadPR_(!!fresh);
-  return { prs: pr.prs, items: pr.items, source: pr.source, readAt: pr.readAt, today: todayISO_() };
+  return { prs: pr.prs, items: pr.items, source: pr.source, readAt: pr.readAt, today: todayISO_(), kendala: listKendala_() };
 }
 
 function actStock_(fresh) {

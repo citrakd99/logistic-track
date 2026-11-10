@@ -109,16 +109,18 @@
     s.txById = new Map(s.tx.map(t => [t.id, t]));
   }
   function reloadCurrent(fresh) { if (state.route === 'pr') loadPR(fresh); else if (state.route === 'stok') loadStock(fresh); }
-  async function afterWrite(msg) { toast(msg); closeDrawer(); await loadStock(true); }
+  async function afterWrite(msg) { toast(msg); closeDrawer(); if (state.route === 'pr') await loadPR(true); else await loadStock(true); }
 
   // ---------- routing ----------
   function route() {
     const h = (location.hash || '#pr').slice(1).split('/');
     state.route = ['pr', 'stok', 'pengaturan'].includes(h[0]) ? h[0] : 'pr';
     if (state.route === 'stok') state.sub = ['stok', 'riwayat', 'dipinjam'].includes(h[1]) ? h[1] : 'stok';
+    if (state.route === 'pr') state.prSub = h[1] === 'kendala' ? 'kendala' : 'list';
     if (state.route === 'pengaturan' && !isAdmin()) { location.hash = '#pr'; return; }
     $$('#nav a[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === state.route));
     $$('#nav a[data-sub]').forEach(a => a.classList.toggle('on', state.route === 'stok' && a.dataset.sub === state.sub));
+    $$('#nav a[data-psub]').forEach(a => a.classList.toggle('on', state.route === 'pr' && a.dataset.psub === state.prSub));
     if (API() && state.route === 'pr' && !state.pr && !state.loading.pr) loadPR();
     if (API() && state.route === 'stok' && !state.stock && !state.loading.stock) loadStock();
     render();
@@ -156,7 +158,7 @@
     renderWho(); renderSrc();
     const v = $('#view');
     if (!API()) { renderNoApi(v); return; }
-    if (state.route === 'pr') renderPR(v);
+    if (state.route === 'pr') { if (state.pr) indexKendala(); state.prSub === 'kendala' ? renderKendalaList(v) : renderPR(v); }
     else if (state.route === 'stok') renderStock(v);
     else renderSettings(v);
   }
@@ -223,7 +225,26 @@
     if (b.diff > 0) return `<span class="bal pos">Lebih ${esc(fmtN(b.diff))}${short ? '' : ' ' + esc(b.unit || '')}</span>`;
     return '<span class="bal ok">Lengkap</span>';
   }
-  const FLAG_TXT = { needed: 'Lewat tgl dibutuhkan', late: 'Lewat estimasi kirim', aging: `PR > ${AGING_DAYS} hari`, short: 'Diterima kurang' };
+  const FLAG_TXT = { needed: 'Lewat tgl dibutuhkan', late: 'Lewat estimasi kirim', aging: `PR > ${AGING_DAYS} hari`, short: 'Diterima kurang', kendala: 'Ada kendala terbuka', kterlambat: 'Komitmen action lewat' };
+  // ---------- kendala & action plan ----------
+  const K_KAT = ['Budget/Harga', 'Approval CC', 'Vendor/Supplier', 'Spesifikasi', 'Pengiriman', 'Administrasi PO', 'Lainnya'];
+  const kOpen = k => k.status === 'open';
+  const kLate = k => kOpen(k) && isISO(k.komitmen) && k.komitmen < today();
+  const kSoon = k => kOpen(k) && isISO(k.komitmen) && !kLate(k) && daysSince(k.komitmen) >= -3;
+  const kLabel = k => k.status === 'selesai' ? ['Selesai', 'p-kembali'] : kLate(k) ? [`Terlambat ${daysSince(k.komitmen)} hari`, 'p-out'] : kSoon(k) ? (k.komitmen === today() ? ['Jatuh tempo hari ini', 'p-low'] : [`${-daysSince(k.komitmen)} hari lagi`, 'p-low']) : ['Open', 'p-in'];
+  function indexKendala() {
+    const s = state.pr; if (s._kIdx === s) return;
+    s._kIdx = s; s.kByItem = new Map(); s.kByPR = new Map();
+    (s.kendala || []).forEach(k => {
+      const tgt = k.itemNo !== '' && k.itemNo != null ? s.kByItem : s.kByPR, key = k.itemNo !== '' && k.itemNo != null ? k.prKey + '|' + k.itemNo : k.prKey;
+      if (!tgt.has(key)) tgt.set(key, []); tgt.get(key).push(k);
+    });
+  }
+  /** Kendala untuk item (tingkat item + tingkat PR). */
+  function kendalaOf(it) {
+    const s = state.pr; if (!s || !s.kByItem) return [];
+    return [...(s.kByItem.get(it.pr + '|' + (isEmpty(it.no) ? '' : String(it.no))) || []), ...(s.kByPR.get(it.pr) || [])];
+  }
   function flagsOf(it, prMap) {
     const f = [], rb = recvBal(it);
     if (rb && rb.diff !== null && rb.diff < 0 && it.status !== 'Cancel') f.push('short');
@@ -233,12 +254,17 @@
     if (isISO(it.reqDate) && it.reqDate < today()) f.push('needed');
     return f;
   }
+  function kflagsOf(it) {
+    const ks = kendalaOf(it).filter(kOpen), f = [];
+    if (ks.length) f.push('kendala'); if (ks.some(kLate)) f.push('kterlambat');
+    return f;
+  }
   function prMatches(it, prMap, ignoreStatus) {
     const f = state.prf;
     if (!ignoreStatus && f.st && it.status !== f.st) return false;
     if (f.hideDone && !f.st && (it.status === 'Close' || it.status === 'Cancel')) return false;
     if (f.supplier && it.supplier !== f.supplier) return false;
-    if (f.flag && !flagsOf(it, prMap).includes(f.flag)) return false;
+    if (f.flag && ![...flagsOf(it, prMap), ...kflagsOf(it)].includes(f.flag)) return false;
     if (f.q) {
       const p = prMap.get(it.pr) || {};
       const hay = [it.desc, it.spec, it.prNo, it.poNo, it.supplier, it.remarks, it.sjNo, p.purpose, p.notes].join(' ').toLowerCase();
@@ -253,7 +279,7 @@
     const { prs, items } = state.pr, f = state.prf;
     const prMap = new Map(prs.map(p => [p.key, p]));
     const cnt = Object.fromEntries(STATUSES.map(s => [s.k, 0])); items.forEach(i => { if (cnt[i.status] !== undefined) cnt[i.status]++; });
-    const fc = { needed: 0, late: 0, aging: 0, short: 0 }; items.forEach(i => flagsOf(i, prMap).forEach(x => fc[x]++));
+    const fc = { needed: 0, late: 0, aging: 0, short: 0, kendala: 0, kterlambat: 0 }; items.forEach(i => [...flagsOf(i, prMap), ...kflagsOf(i)].forEach(x => fc[x]++));
     const open = items.filter(i => i.status !== 'Close' && i.status !== 'Cancel').length;
     const sups = [...new Set(items.map(i => i.supplier).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     const active = !!(f.q || f.st || f.supplier || f.flag);
@@ -271,22 +297,23 @@
       const c = {}; all.forEach(i => c[i.status] = (c[i.status] || 0) + 1);
       const bar = STATUSES.map(s => c[s.k] ? `<span class="${s.cls}" style="width:${c[s.k] / all.length * 100}%" title="${esc(s.k)}: ${c[s.k]}"></span>` : '').join('');
       const openCnt = all.filter(i => i.status !== 'Close' && i.status !== 'Cancel').length, age = daysSince(p.prDate);
+      const kAll = [...new Set(all.flatMap(i => kendalaOf(i)))].filter(kOpen), kL = kAll.filter(kLate).length;
       out.push(`<section class="pr ${isOpen ? 'open' : ''}">
         <div class="prh" data-toggle="${esc(p.key)}" role="button" tabindex="0" aria-expanded="${isOpen}">
           <span class="prno">${esc(p.prNo)}</span>
           <div class="prmid"><span class="t">${esc(p.purpose || (all[0] && all[0].desc) || '—')}</span>
-            <span class="m"><span>${esc(fmtD(p.prDate))}${age !== null && openCnt ? ' · ' + age + ' hari' : ''}</span><span>${all.length} item${active && vis.length !== all.length ? ` (${vis.length} cocok)` : ''}</span><span>${openCnt ? openCnt + ' terbuka' : 'Selesai'}</span></span></div>
+            <span class="m"><span>${esc(fmtD(p.prDate))}${age !== null && openCnt ? ' · ' + age + ' hari' : ''}</span><span>${all.length} item${active && vis.length !== all.length ? ` (${vis.length} cocok)` : ''}</span><span>${openCnt ? openCnt + ' terbuka' : 'Selesai'}</span>${kAll.length ? `<span class="kbadge ${kL ? 'late' : ''}">⚠ ${kAll.length} kendala${kL ? ` · ${kL} terlambat` : ''}</span>` : ''}</span></div>
           <div style="display:flex;gap:8px;align-items:center"><span class="bar">${bar}</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></div>
         </div>
-        ${isOpen ? `${p.purpose || p.notes ? `<div class="prinfo"><div>${p.purpose ? '<b>Untuk:</b> ' + esc(p.purpose) : ''}${p.notes ? (p.purpose ? '\n' : '') + '<b>Note:</b> ' + esc(p.notes) : ''}</div></div>` : ''}
+        ${isOpen ? `${(state.pr.kByPR.get(p.key) || []).filter(kOpen).length || isAdmin() ? `<div class="prinfo">${kendalaChips(state.pr.kByPR.get(p.key) || [], 'Kendala seluruh PR')}${isAdmin() ? `<button class="btn sm" data-addkpr="${esc(p.key)}">+ Kendala seluruh PR</button>` : ''}</div>` : ''}${p.purpose || p.notes ? `<div class="prinfo"><div>${p.purpose ? '<b>Untuk:</b> ' + esc(p.purpose) : ''}${p.notes ? (p.purpose ? '\n' : '') + '<b>Note:</b> ' + esc(p.notes) : ''}</div></div>` : ''}
         <div class="rows"><div class="row head"><div>No</div><div>Deskripsi</div><div>Qty</div><div>Release</div><div>PO</div><div>Supplier</div><div>Terima</div><div>Status</div></div>
         ${vis.map(i => prRow(i, prMap)).join('') || '<div class="row" style="cursor:default"><div></div><div class="dim">Tidak ada item yang cocok dengan filter.</div></div>'}</div>` : ''}
       </section>`);
     }
-    v.innerHTML = `
+    v.innerHTML = `${prTabs()}
       <div class="pipe">${STATUSES.map(s => `<button class="stage ${s.cls} ${f.st === s.k ? 'on' : ''}" data-st="${esc(s.k)}" aria-pressed="${f.st === s.k}"><span class="lbl">${esc(s.k)}</span><span class="n">${cnt[s.k]}</span><span class="w">${esc(s.who)}</span></button>`).join('')}</div>
       <div class="chips"><span class="chip static"><b>${items.length}</b> item · <b>${prs.length}</b> PR · <b>${open}</b> terbuka</span>
-        ${['needed', 'late', 'aging', 'short'].map(x => `<button class="chip ${fc[x] ? 'warn' : ''} ${f.flag === x ? 'on' : ''}" data-flag="${x}"><b>${fc[x]}</b> ${esc(FLAG_TXT[x])}</button>`).join('')}
+        ${['kendala', 'kterlambat', 'needed', 'late', 'aging', 'short'].map(x => `<button class="chip ${fc[x] ? 'warn' : ''} ${f.flag === x ? 'on' : ''}" data-flag="${x}"><b>${fc[x]}</b> ${esc(FLAG_TXT[x])}</button>`).join('')}
         ${active ? '<button class="chip" data-clear="1">Hapus filter ✕</button>' : ''}</div>
       <div class="tools">
         <input class="inp grow" id="prq" type="search" placeholder="Cari barang, no. PR, PO, supplier…" value="${esc(f.q)}" aria-label="Cari">
@@ -309,6 +336,9 @@
     $('#prprint').onclick = () => { state.printAll = true; render(); setTimeout(() => { window.print(); state.printAll = false; render(); }, 80); };
     $$('[data-toggle]', v).forEach(h => { const go = () => { const k = h.dataset.toggle; state.open.has(k) ? state.open.delete(k) : state.open.add(k); render(); }; h.onclick = go; h.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
     $$('[data-item]', v).forEach(r => r.onclick = () => openPRItem(r.dataset.item, prMap));
+    $$('[data-addkpr]', v).forEach(b => b.onclick = e => { e.stopPropagation(); const p = prMap.get(b.dataset.addkpr); openKendalaForm(null, { prNo: p.prNo, itemNo: '', itemId: '', itemDesc: '' }); });
+    $$('[data-kid]', v).forEach(b => b.onclick = e => { e.stopPropagation(); openKendala(b.dataset.kid); });
+    bindPrTabs(v);
   }
   function prRow(it, prMap) {
     const fl = flagsOf(it, prMap).filter(x => x !== 'short'), rb = recvBal(it);
@@ -323,7 +353,7 @@
       <div><div class="d">${esc(it.desc || '(tanpa deskripsi)')}</div>${x ? `<div class="x">${esc(x)}</div>` : ''}</div>
       <div class="c-hide">${qty}</div><div class="c-hide">${rel}</div><div class="c-hide">${po}</div>
       <div class="c-hide">${esc(it.supplier) || '<span class="dim">–</span>'}</div><div class="c-hide">${recv}</div>
-      <div><span class="pill ${SCLS[it.status] || 'st-rel'}">${esc(it.status)}</span>${fl.length ? `<span class="flag">${esc(fl.map(z => FLAG_TXT[z]).join(' · '))}</span>` : ''}</div>
+      <div><span class="pill ${SCLS[it.status] || 'st-rel'}">${esc(it.status)}</span>${fl.length ? `<span class="flag">${esc(fl.map(z => FLAG_TXT[z]).join(' · '))}</span>` : ''}${(() => { const ks = kendalaOf(it).filter(kOpen); if (!ks.length) return ''; const l = ks.filter(kLate).length; return `<span class="kbadge ${l ? 'late' : ''}" title="${esc(ks.map(k => k.kendala + ' → ' + k.pic + ' (' + fmtD(k.komitmen) + ')').join('\n'))}">⚠ ${ks.length} kendala${l ? ' · terlambat' : ' · ' + esc(fmtD(ks.map(k => k.komitmen).sort()[0]))}</span>`; })()}</div>
       <div class="meta"><span><b>Qty</b> ${qty}</span>${it.poNo ? `<span><b>PO</b> ${esc(it.poNo)}</span>` : ''}${it.supplier ? `<span>${esc(it.supplier)}</span>` : ''}${hasR ? `<span><b>Terima</b> ${esc(fmtN(it.recvQty))} ${esc(it.recvUnit)}</span>` : ''}${rb ? balBadge(rb) : ''}</div>
     </div>`;
   }
@@ -343,10 +373,133 @@
         ${kv('Tgl terima', esc(fmtD(it.recvDate, true)))}${kv('No. SJ', esc(it.sjNo))}${kv('Keterangan', esc(it.remarks))}
         ${kv('Untuk', esc(p.purpose))}${kv('Catatan PR', esc(p.notes))}
       </dl>
-      <p class="hint">Data ini dibaca dari Google Sheet Tracking PR. Perubahan dilakukan di Sheet oleh tim logistik.</p>`,
-      foot: '<button class="btn" data-close="1">Tutup</button>'
+      <fieldset><legend>Kendala &amp; action plan</legend>${kendalaCards(kendalaOf(it).filter(k => k.status !== 'batal'))}</fieldset>
+      <p class="hint">Data PR dibaca dari Google Sheet Tracking PR (diubah di Sheet oleh tim logistik). Kendala & action plan disimpan di Master.</p>`,
+      foot: isAdmin() ? '<button class="btn" data-close="1">Tutup</button><button class="btn primary" id="kAdd">+ Kendala</button>' : '<button class="btn" data-close="1">Tutup</button>'
     });
+    bindKendalaCards();
+    const ka = $('#kAdd'); if (ka) ka.onclick = () => openKendalaForm(null, { prNo: it.prNo, itemNo: isEmpty(it.no) ? '' : String(it.no), itemId: it.id, itemDesc: it.desc });
   }
+  function prTabs() {
+    const n = (state.pr && state.pr.kendala || []).filter(kOpen).length, l = (state.pr && state.pr.kendala || []).filter(kLate).length;
+    return `<div class="tabs stok-tabs" role="tablist"><a class="tab ${state.prSub !== 'kendala' ? 'on' : ''}" href="#pr">Daftar PR</a><a class="tab ${state.prSub === 'kendala' ? 'on' : ''}" href="#pr/kendala">Kendala &amp; action plan <span class="cnt ${l ? 'late' : ''}">${n}</span></a></div>`;
+  }
+  function bindPrTabs() { }
+  function kendalaChips(list, label) {
+    const o = list.filter(kOpen); if (!o.length) return '<span></span>';
+    return `<div style="display:flex;flex-direction:column;gap:4px"><b>${esc(label)}</b>${o.map(k => { const lb = kLabel(k); return `<button class="kline" data-kid="${esc(k.id)}"><span class="pill ${lb[1]}">${esc(lb[0])}</span> ${esc(k.kendala)} → <b>${esc(k.pic)}</b> · ${esc(fmtD(k.komitmen))}</button>`; }).join('')}</div>`;
+  }
+  function kendalaCards(list) {
+    if (!list.length) return `<span class="hint">Belum ada kendala tercatat.${isAdmin() ? ' Tekan <b>+ Kendala</b> jika item ini tersendat.' : ''}</span>`;
+    return list.sort((a, b) => (kOpen(b) - kOpen(a)) || String(a.komitmen).localeCompare(String(b.komitmen))).map(k => { const lb = kLabel(k); return `<div class="kcard ${kLate(k) ? 'late' : ''} ${k.status === 'selesai' ? 'done' : ''}" data-kid="${esc(k.id)}" role="button" tabindex="0">
+      <div class="khead"><span class="pill ${lb[1]}">${esc(lb[0])}</span><span class="kat">${esc(k.kategori)}</span>${k.itemNo === '' || k.itemNo == null ? '<span class="kat">seluruh PR</span>' : ''}${+k.geser ? `<span class="hint">digeser ${esc(k.geser)}×</span>` : ''}</div>
+      <dl class="kv kkv"><dt>Kenapa</dt><dd>${esc(k.kendala)}</dd><dt>Action</dt><dd>${esc(k.action)}</dd><dt>Siapa (PIC)</dt><dd><b>${esc(k.pic)}</b></dd><dt>Kapan</dt><dd><b>${esc(fmtD(k.komitmen, true))}</b></dd>${k.followup ? `<dt>Follow-up</dt><dd>${esc(k.followup)} <span class="dim">(${esc(fmtDT(+k.followupAt))})</span></dd>` : ''}</dl></div>`; }).join('');
+  }
+  function bindKendalaCards() { $$('.kcard[data-kid]').forEach(c => { c.onclick = () => openKendala(c.dataset.kid); c.onkeydown = e => { if (e.key === 'Enter') openKendala(c.dataset.kid); }; }); }
+  const findK = id => (state.pr.kendala || []).find(k => k.id === id);
+  const picList = () => [...new Set((state.pr.kendala || []).map(k => k.pic).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'id'));
+  function kTarget(k) {
+    const it = k.itemNo !== '' && k.itemNo != null ? state.pr.items.find(i => i.pr === k.prKey && String(i.no) === String(k.itemNo)) : null;
+    return `${k.prNo}${k.itemNo !== '' && k.itemNo != null ? ' · item ' + k.itemNo : ' · seluruh PR'}${it ? ' — ' + it.desc : k.itemDesc ? ' — ' + k.itemDesc : ''}`;
+  }
+
+  function openKendala(id) {
+    const k = findK(id); if (!k) return;
+    const lb = kLabel(k);
+    openDrawer({
+      eyebrow: 'Kendala & action plan', title: kTarget(k),
+      body: `<div><span class="pill ${lb[1]}">${esc(lb[0])}</span> <span class="kat">${esc(k.kategori)}</span></div>
+        <dl class="kv"><dt>Kenapa (kendala)</dt><dd>${esc(k.kendala)}</dd><dt>Apa (action)</dt><dd>${esc(k.action)}</dd><dt>Siapa (PIC)</dt><dd><b>${esc(k.pic)}</b></dd>
+          <dt>Kapan (komitmen)</dt><dd><b>${esc(fmtD(k.komitmen, true))}</b>${+k.geser ? ` <span class="late">· sudah digeser ${esc(k.geser)}×</span>` : ''}</dd>
+          ${k.followup ? `<dt>Follow-up terakhir</dt><dd>${esc(k.followup)} <span class="dim">(${esc(fmtDT(+k.followupAt))})</span></dd>` : ''}
+          <dt>Dicatat</dt><dd>${esc(fmtDT(+k.createdAt))} · ${esc(k.createdBy)}</dd></dl>
+        <fieldset><legend>Riwayat</legend><div class="hint" style="white-space:pre-line">${esc(k.riwayat || '–')}</div></fieldset>`,
+      foot: isAdmin() ? (k.status === 'open'
+        ? '<button class="btn sm danger" data-kop="batal">Batalkan</button><button class="btn sm" data-kop="edit">Edit / geser tanggal</button><button class="btn sm" data-kop="followup">Follow-up</button><button class="btn sm primary" data-kop="selesai">Tandai selesai</button>'
+        : '<button class="btn" data-close="1">Tutup</button><button class="btn sm" data-kop="buka">Buka lagi</button>') : '<button class="btn" data-close="1">Tutup</button>'
+    });
+    $$('[data-kop]').forEach(b => b.onclick = () => b.dataset.kop === 'edit' ? openKendalaForm(k) : openKendalaOp(k, b.dataset.kop));
+  }
+  function openKendalaForm(k, target) {
+    const t = k || target;
+    openDrawer({
+      eyebrow: k ? 'Admin · Edit kendala' : 'Admin · Kendala baru', title: kTarget(Object.assign({ prKey: (t.prNo || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '') }, t)),
+      body: `<div class="grid2">
+          <div class="f wide"><label for="kKat">Kategori kendala</label><select class="inp" id="kKat">${K_KAT.map(c => `<option ${(k ? k.kategori : '') === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+          <div class="f wide"><label for="kWhy">Kenapa — kendalanya apa?</label><textarea class="inp" id="kWhy" placeholder="mis. Stok di supplier kosong, indent 2 minggu">${k ? esc(k.kendala) : ''}</textarea></div>
+          <div class="f wide"><label for="kWhat">Apa — action plan</label><textarea class="inp" id="kWhat" placeholder="mis. Cari vendor alternatif & minta penawaran">${k ? esc(k.action) : ''}</textarea></div>
+          <div class="f"><label for="kPic">Siapa — PIC</label><input class="inp" id="kPic" list="dlPic" autocomplete="off" placeholder="Nama (divisi)" value="${k ? esc(k.pic) : ''}">${dl('dlPic', picList())}</div>
+          <div class="f"><label for="kWhen">Kapan — tanggal komitmen</label><input class="inp" type="date" id="kWhen" value="${k ? esc(k.komitmen) : ''}"></div>
+          ${k ? '<div class="f wide" id="kGeserBox" hidden><label for="kGeser">Alasan tanggal komitmen digeser</label><input class="inp" id="kGeser" placeholder="wajib jika tanggal berubah"></div>' : ''}
+        </div><div id="kErr"></div>`,
+      foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="kSave">Simpan</button>'
+    });
+    if (k) $('#kWhen').oninput = () => { $('#kGeserBox').hidden = val('kWhen') === k.komitmen; };
+    $('#kSave').onclick = () => {
+      if (!val('kWhy') || !val('kWhat') || !val('kPic') || !val('kWhen')) { showErr('kErr', 'Isi lengkap: kenapa, action, PIC, dan tanggal komitmen.'); return; }
+      if (k && val('kWhen') !== k.komitmen && !val('kGeser')) { showErr('kErr', 'Tanggal komitmen berubah: isi alasannya.'); return; }
+      const body = Object.assign(k ? { id: k.id } : { prNo: t.prNo, itemNo: t.itemNo, itemId: t.itemId, itemDesc: t.itemDesc },
+        { kategori: val('kKat'), kendala: val('kWhy'), rencana: val('kWhat'), pic: val('kPic'), komitmen: val('kWhen'), alasanGeser: k ? val('kGeser') : '' });
+      submit('kSave', 'kErr', () => apiPost('saveKendala', body), k ? 'Kendala diperbarui' : 'Kendala dicatat',
+        { title: k ? 'Simpan perubahan kendala?' : 'Catat kendala baru?', rows: [['Untuk', esc(kTarget(Object.assign({ prKey: '' }, t)))], ['Kenapa', esc(body.kendala)], ['Action', esc(body.rencana)], ['PIC', `<b>${esc(body.pic)}</b>`],
+          ['Komitmen', k && k.komitmen !== body.komitmen ? `<s class="dim">${esc(fmtD(k.komitmen, true))}</s> → <b>${esc(fmtD(body.komitmen, true))}</b> (${esc(body.alasanGeser)})` : `<b>${esc(fmtD(body.komitmen, true))}</b>`]] });
+    };
+  }
+  function openKendalaOp(k, op) {
+    const T = { followup: ['Catat follow-up', 'Hasil follow-up (wajib)', 'mis. PIC konfirmasi barang dikirim Kamis', 'Follow-up tersimpan', false],
+      selesai: ['Tandai kendala selesai', 'Catatan penyelesaian (opsional)', 'mis. barang sudah diterima', 'Kendala selesai', false],
+      buka: ['Buka lagi kendala', 'Alasan dibuka lagi (wajib)', '', 'Kendala dibuka lagi', false],
+      batal: ['Batalkan catatan kendala', 'Alasan pembatalan (wajib)', 'mis. salah input', 'Kendala dibatalkan', true] }[op];
+    openDrawer({
+      eyebrow: 'Admin · Kendala', title: T[0],
+      body: `<div class="hint">${esc(kTarget(k))}<br><b>${esc(k.kendala)}</b> → ${esc(k.action)} · PIC ${esc(k.pic)} · ${esc(fmtD(k.komitmen, true))}</div>
+        <div class="f"><label for="kNote">${T[1]}</label><textarea class="inp" id="kNote" placeholder="${esc(T[2])}"></textarea></div><div id="kErr"></div>`,
+      foot: `<button class="btn" data-close="1">Kembali</button><button class="btn ${T[4] ? 'danger' : 'primary'}" id="kGo">${esc(T[0])}</button>`
+    });
+    $('#kGo').onclick = () => submit('kGo', 'kErr', () => apiPost('kendalaStatus', { id: k.id, op, note: val('kNote') }), T[3],
+      () => ({ title: T[0] + '?', rows: [['Kendala', esc(k.kendala)], ['PIC', esc(k.pic)], ['Catatan', esc(val('kNote'))]], ok: 'Ya', danger: T[4] }));
+  }
+
+  function renderKendalaList(v) {
+    if (!state.pr) { v.innerHTML = state.prErr ? errView(state.prErr, 'retryPR') : '<div class="loading">Memuat…</div>'; const r = $('#retryPR'); if (r) r.onclick = () => loadPR(true); return; }
+    const f = state.kf || (state.kf = { st: 'open', pic: '', q: '' });
+    const all = (state.pr.kendala || []);
+    let list = all.filter(k => f.st === 'semua' ? true : f.st === 'open' ? kOpen(k) : f.st === 'late' ? kLate(k) : f.st === 'soon' ? kSoon(k) : k.status === 'selesai');
+    if (f.pic) list = list.filter(k => k.pic === f.pic);
+    if (f.q) { const q = f.q.toLowerCase().split(/\s+/).filter(Boolean); list = list.filter(k => { const h = [k.prNo, k.itemDesc, k.kendala, k.action, k.pic, k.kategori, k.followup].join(' ').toLowerCase(); return q.every(w => h.includes(w)); }); }
+    list.sort((a, b) => (kOpen(b) - kOpen(a)) || String(a.komitmen).localeCompare(String(b.komitmen)));
+    const open = all.filter(kOpen), byPic = {};
+    open.forEach(k => { const p = byPic[k.pic] || (byPic[k.pic] = { n: 0, late: 0 }); p.n++; if (kLate(k)) p.late++; });
+    const cnt = { open: open.length, late: open.filter(kLate).length, soon: open.filter(kSoon).length, selesai: all.filter(k => k.status === 'selesai').length, semua: all.length };
+    v.innerHTML = `${prTabs()}
+      <div class="kpis" style="grid-template-columns:repeat(4,minmax(130px,1fr))">${[['open', 'k-in', 'Kendala terbuka', 'belum selesai'], ['late', 'k-out', 'Komitmen lewat', 'perlu di-follow-up'], ['soon', 'k-low', 'Jatuh tempo ≤ 3 hari', 'ingatkan PIC'], ['selesai', 'k-ok', 'Selesai', 'sudah tuntas']].map(([key, cls, l, w]) => `<button class="kpi ${cls} ${f.st === key ? 'on' : ''}" data-kst="${key}"><span class="lbl">${l}</span><span class="n">${cnt[key]}</span><span class="w">${w}</span></button>`).join('')}</div>
+      ${Object.keys(byPic).length ? `<div class="chips"><span class="chip static">Per PIC:</span>${Object.entries(byPic).sort((a, b) => b[1].late - a[1].late || b[1].n - a[1].n).map(([p, c]) => `<button class="chip ${f.pic === p ? 'on' : ''} ${c.late ? 'warn' : ''}" data-kpic="${esc(p)}">${esc(p)} · ${c.n}${c.late ? ` · <b>${c.late} lewat</b>` : ''}</button>`).join('')}</div>` : ''}
+      <div class="tools"><input class="inp grow" id="kq" type="search" placeholder="Cari PR, barang, kendala, PIC…" value="${esc(f.q)}" aria-label="Cari kendala">
+        <select class="inp" id="kst" style="width:auto" aria-label="Status">${[['open', 'Terbuka'], ['late', 'Komitmen lewat'], ['soon', 'Jatuh tempo ≤ 3 hari'], ['selesai', 'Selesai'], ['semua', 'Semua']].map(([k2, l]) => `<option value="${k2}" ${f.st === k2 ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        ${f.pic ? `<button class="chip on" id="kpicClr">PIC: ${esc(f.pic)} ✕</button>` : ''}<button class="btn sm" id="kxlsx">Excel</button></div>
+      <div class="resultline">${list.length} catatan${isAdmin() ? ' · tambah kendala dari detail item di Daftar PR' : ''}</div>
+      <div class="table">${list.length ? `<div class="kr head"><div>Kapan</div><div>PR / item</div><div>Kenapa → Action</div><div>Siapa</div><div class="c-hide">Follow-up terakhir</div></div>` + list.map(k => { const lb = kLabel(k); return `<div class="kr" data-kid="${esc(k.id)}" role="button" tabindex="0">
+          <div><b>${esc(fmtD(k.komitmen))}</b><br><span class="pill ${lb[1]}">${esc(lb[0])}</span>${+k.geser ? `<div class="hint">digeser ${esc(k.geser)}×</div>` : ''}</div>
+          <div><span class="prno">${esc(k.prNo)}</span><div class="hint">${esc(k.itemNo !== '' && k.itemNo != null ? 'item ' + k.itemNo + ' · ' + (k.itemDesc || '') : 'seluruh PR')}</div></div>
+          <div><div><span class="kat">${esc(k.kategori)}</span> ${esc(k.kendala)}</div><div class="hint">→ ${esc(k.action)}</div></div>
+          <div><b>${esc(k.pic)}</b></div>
+          <div class="c-hide hint">${k.followup ? esc(k.followup) + '<br>' + esc(fmtDT(+k.followupAt)) : '–'}</div></div>`; }).join('') : '<div class="empty" style="border:0">Tidak ada catatan untuk filter ini.</div>'}</div>`;
+    $$('[data-kst]', v).forEach(b => b.onclick = () => { f.st = b.dataset.kst; render(); });
+    $('#kst').onchange = e => { f.st = e.target.value; render(); };
+    $$('[data-kpic]', v).forEach(b => b.onclick = () => { f.pic = f.pic === b.dataset.kpic ? '' : b.dataset.kpic; render(); });
+    const pc = $('#kpicClr'); if (pc) pc.onclick = () => { f.pic = ''; render(); };
+    let qt; $('#kq').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { f.q = e.target.value.trim(); render(); const i = $('#kq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
+    $$('.kr[data-kid]', v).forEach(r => { r.onclick = () => openKendala(r.dataset.kid); r.onkeydown = e => { if (e.key === 'Enter') openKendala(r.dataset.kid); }; });
+    $('#kxlsx').onclick = async () => {
+      try {
+        const X = await xlsxLib(), wb = X.utils.book_new();
+        const aoa = [['Status', 'Komitmen', 'Hari lewat', 'Digeser', 'No. PR', 'Item', 'Deskripsi', 'Kategori', 'Kendala (kenapa)', 'Action (apa)', 'PIC (siapa)', 'Follow-up terakhir', 'Dicatat oleh', 'Riwayat']]
+          .concat(list.map(k => [kLabel(k)[0], k.komitmen, kLate(k) ? daysSince(k.komitmen) : '', +k.geser || 0, k.prNo, k.itemNo, k.itemDesc, k.kategori, k.kendala, k.action, k.pic, k.followup, k.createdBy, k.riwayat]));
+        X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), 'Kendala PR'); X.writeFile(wb, `Kendala-PR-${today()}.xlsx`);
+      } catch (e) { toast(e.message || 'Export gagal', true); }
+    };
+  }
+
   async function xlsxLib() {
     if (window.XLSX) return window.XLSX;
     await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = res; s.onerror = () => rej(new Error('Gagal memuat pustaka Excel')); document.head.appendChild(s); });
@@ -356,8 +509,8 @@
     try {
       const X = await xlsxLib(), f = state.prf;
       const rows = state.pr.items.filter(i => prMatches(i, prMap));
-      const aoa = [['No. PR', 'Tgl PR', 'No', 'Deskripsi', 'Spesifikasi', 'Qty', 'Sat', 'Dibutuhkan', 'Qty Release', 'Sat Release', 'Tgl Release', 'Tgl PO', 'No. PO', 'ETA', 'Qty Terima', 'Sat Terima', 'Tgl Terima', 'No. SJ', 'Supplier', 'Status', 'Keterangan']]
-        .concat(rows.map(i => [i.prNo, prMap.get(i.pr)?.prDate || '', i.no, i.desc, i.spec, i.qty, i.unit, i.reqDate || i.reqNote, i.ccQty, i.ccUnit, i.releaseDate, i.poDate, i.poNo, i.eta, i.recvQty, i.recvUnit, i.recvDate, i.sjNo, i.supplier, i.status, i.remarks]));
+      const aoa = [['No. PR', 'Tgl PR', 'No', 'Deskripsi', 'Spesifikasi', 'Qty', 'Sat', 'Dibutuhkan', 'Qty Release', 'Sat Release', 'Tgl Release', 'Tgl PO', 'No. PO', 'ETA', 'Qty Terima', 'Sat Terima', 'Tgl Terima', 'No. SJ', 'Supplier', 'Status', 'Keterangan', 'Kendala terbuka (PIC · komitmen)']]
+        .concat(rows.map(i => [i.prNo, prMap.get(i.pr)?.prDate || '', i.no, i.desc, i.spec, i.qty, i.unit, i.reqDate || i.reqNote, i.ccQty, i.ccUnit, i.releaseDate, i.poDate, i.poNo, i.eta, i.recvQty, i.recvUnit, i.recvDate, i.sjNo, i.supplier, i.status, i.remarks, kendalaOf(i).filter(kOpen).map(k => `${k.kendala} → ${k.rencana || k.action} (${k.pic} · ${k.komitmen})`).join('\n')]));
       const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), 'Tracking PR');
       X.writeFile(wb, `Tracking-PR-${today()}${f.st ? '-' + f.st.replace(/\s+/g, '') : ''}.xlsx`);
     } catch (e) { toast(e.message || 'Export gagal', true); }
@@ -842,7 +995,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.5.0';
+    $('#ver').textContent = 'v1.6.0';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }
