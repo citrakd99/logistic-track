@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.6.0';
+var APP_VERSION = '1.6.1';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -65,6 +65,7 @@ function doPost(e) {
       case 'setKat': return actSetKat_(me, b);
       case 'saveKendala': return actSaveKendala_(me, b);
       case 'kendalaStatus': return actKendalaStatus_(me, b);
+      case 'setPics': return actSetPics_(me, b);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);
@@ -84,7 +85,7 @@ function staleFiles_() {
   if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
   if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
   if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
-  if (typeof actSaveKendala_ !== 'function' || String(actPR_).indexOf('listKendala_') < 0) stale.push('Kendala.gs');
+  if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0) stale.push('Kendala.gs');
   return stale;
 }
 function actStatus_() {
@@ -100,7 +101,7 @@ function srcView_(id) {
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
   var pc = pinCfg_();
-  return { staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  return { picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**

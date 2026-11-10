@@ -4,6 +4,26 @@
  * Disimpan di tab KENDALA (Master/Data Sheet) karena Sheet Tracking PR hanya bisa dilihat.
  * Status: open | selesai | batal. "Terlambat" dihitung di tampilan (komitmen < hari ini & open).
  */
+var DEFAULT_PICS = ['Fitri', 'Aqsha', 'Ahad', 'Anggun'];
+/** Daftar PIC untuk dropdown (Script Properties PIC_LIST; default 4 nama). */
+function picList_() { try { var l = JSON.parse(props_().getProperty('PIC_LIST') || 'null'); return Array.isArray(l) && l.length ? l : DEFAULT_PICS.slice(); } catch (e) { return DEFAULT_PICS.slice(); } }
+function savePics_(l) { props_().setProperty('PIC_LIST', JSON.stringify(l)); }
+function cleanPic_(p) { return String(p || '').replace(/\s+/g, ' ').trim().slice(0, 40); }
+/** Tambahkan PIC ke daftar jika belum ada (tanpa beda huruf besar/kecil). Mengembalikan nama baku. */
+function ensurePic_(p) {
+  var l = picList_(), hit = l.filter(function (x) { return x.toLowerCase() === p.toLowerCase(); })[0];
+  if (hit) return hit;
+  l.push(p); savePics_(l); return p;
+}
+/** Admin: atur ulang daftar PIC (tambah / hapus / urutkan). Catatan lama tidak berubah. */
+function actSetPics_(me, b) {
+  var seen = {}, l = (Array.isArray(b.pics) ? b.pics : []).map(cleanPic_).filter(function (p) { var k = p.toLowerCase(); if (!p || seen[k]) return false; seen[k] = 1; return true; });
+  if (!l.length) fail_('invalid', 'Minimal 1 PIC.');
+  if (l.length > 50) fail_('invalid', 'Maksimal 50 PIC.');
+  savePics_(l); bumpDataVersion_(); log_(me.email, 'setPics', l.join(', '));
+  return { picList: l };
+}
+
 var KENDALA_KAT = ['Budget/Harga', 'Approval CC', 'Vendor/Supplier', 'Spesifikasi', 'Pengiriman', 'Administrasi PO', 'Lainnya'];
 
 function listKendala_() {
@@ -16,12 +36,13 @@ function addRiwayat_(row, me, text) { row.riwayat = (String(row.riwayat || '') +
 
 /** Buat / ubah catatan kendala. Ubah tanggal komitmen wajib alasan → geser+1 & masuk riwayat. */
 function actSaveKendala_(me, b) {
-  var kendala = pStr_(b.kendala).slice(0, 500), action = pStr_(b.rencana).slice(0, 500), pic = pStr_(b.pic).slice(0, 80), komitmen = pStr_(b.komitmen);
+  var kendala = pStr_(b.kendala).slice(0, 500), action = pStr_(b.rencana).slice(0, 500), pic = cleanPic_(b.pic), komitmen = pStr_(b.komitmen);
   var kategori = KENDALA_KAT.indexOf(b.kategori) >= 0 ? b.kategori : 'Lainnya';
   if (!kendala) fail_('invalid', 'Isi kendala (kenapa) wajib diisi.');
   if (!action) fail_('invalid', 'Action plan (apa yang dilakukan) wajib diisi.');
   if (!pic) fail_('invalid', 'PIC (siapa) wajib diisi.');
   if (!isISO_(komitmen)) fail_('invalid', 'Tanggal komitmen (kapan) wajib diisi.');
+  pic = ensurePic_(pic); // PIC baru otomatis masuk daftar dropdown
   return withLock_(function () {
     var ss = db_(), rows = readTable_(ss, 'KENDALA'), now = Date.now();
     if (b.id) {

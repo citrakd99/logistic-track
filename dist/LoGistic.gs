@@ -10,7 +10,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.6.0';
+var APP_VERSION = '1.6.1';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -69,6 +69,7 @@ function doPost(e) {
       case 'setKat': return actSetKat_(me, b);
       case 'saveKendala': return actSaveKendala_(me, b);
       case 'kendalaStatus': return actKendalaStatus_(me, b);
+      case 'setPics': return actSetPics_(me, b);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);
@@ -88,7 +89,7 @@ function staleFiles_() {
   if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
   if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
   if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
-  if (typeof actSaveKendala_ !== 'function' || String(actPR_).indexOf('listKendala_') < 0) stale.push('Kendala.gs');
+  if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0) stale.push('Kendala.gs');
   return stale;
 }
 function actStatus_() {
@@ -104,7 +105,7 @@ function srcView_(id) {
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
   var pc = pinCfg_();
-  return { staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  return { picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**
@@ -698,7 +699,7 @@ function stockContext_(ss, fresh) {
 
 function actPR_(fresh) {
   var pr = loadPR_(!!fresh);
-  return { prs: pr.prs, items: pr.items, source: pr.source, readAt: pr.readAt, today: todayISO_(), kendala: listKendala_() };
+  return { prs: pr.prs, items: pr.items, source: pr.source, readAt: pr.readAt, today: todayISO_(), kendala: listKendala_(), picList: picList_() };
 }
 
 function actStock_(fresh) {
@@ -890,6 +891,26 @@ function actSetKat_(me, b) {
  * Disimpan di tab KENDALA (Master/Data Sheet) karena Sheet Tracking PR hanya bisa dilihat.
  * Status: open | selesai | batal. "Terlambat" dihitung di tampilan (komitmen < hari ini & open).
  */
+var DEFAULT_PICS = ['Fitri', 'Aqsha', 'Ahad', 'Anggun'];
+/** Daftar PIC untuk dropdown (Script Properties PIC_LIST; default 4 nama). */
+function picList_() { try { var l = JSON.parse(props_().getProperty('PIC_LIST') || 'null'); return Array.isArray(l) && l.length ? l : DEFAULT_PICS.slice(); } catch (e) { return DEFAULT_PICS.slice(); } }
+function savePics_(l) { props_().setProperty('PIC_LIST', JSON.stringify(l)); }
+function cleanPic_(p) { return String(p || '').replace(/\s+/g, ' ').trim().slice(0, 40); }
+/** Tambahkan PIC ke daftar jika belum ada (tanpa beda huruf besar/kecil). Mengembalikan nama baku. */
+function ensurePic_(p) {
+  var l = picList_(), hit = l.filter(function (x) { return x.toLowerCase() === p.toLowerCase(); })[0];
+  if (hit) return hit;
+  l.push(p); savePics_(l); return p;
+}
+/** Admin: atur ulang daftar PIC (tambah / hapus / urutkan). Catatan lama tidak berubah. */
+function actSetPics_(me, b) {
+  var seen = {}, l = (Array.isArray(b.pics) ? b.pics : []).map(cleanPic_).filter(function (p) { var k = p.toLowerCase(); if (!p || seen[k]) return false; seen[k] = 1; return true; });
+  if (!l.length) fail_('invalid', 'Minimal 1 PIC.');
+  if (l.length > 50) fail_('invalid', 'Maksimal 50 PIC.');
+  savePics_(l); bumpDataVersion_(); log_(me.email, 'setPics', l.join(', '));
+  return { picList: l };
+}
+
 var KENDALA_KAT = ['Budget/Harga', 'Approval CC', 'Vendor/Supplier', 'Spesifikasi', 'Pengiriman', 'Administrasi PO', 'Lainnya'];
 
 function listKendala_() {
@@ -902,12 +923,13 @@ function addRiwayat_(row, me, text) { row.riwayat = (String(row.riwayat || '') +
 
 /** Buat / ubah catatan kendala. Ubah tanggal komitmen wajib alasan → geser+1 & masuk riwayat. */
 function actSaveKendala_(me, b) {
-  var kendala = pStr_(b.kendala).slice(0, 500), action = pStr_(b.rencana).slice(0, 500), pic = pStr_(b.pic).slice(0, 80), komitmen = pStr_(b.komitmen);
+  var kendala = pStr_(b.kendala).slice(0, 500), action = pStr_(b.rencana).slice(0, 500), pic = cleanPic_(b.pic), komitmen = pStr_(b.komitmen);
   var kategori = KENDALA_KAT.indexOf(b.kategori) >= 0 ? b.kategori : 'Lainnya';
   if (!kendala) fail_('invalid', 'Isi kendala (kenapa) wajib diisi.');
   if (!action) fail_('invalid', 'Action plan (apa yang dilakukan) wajib diisi.');
   if (!pic) fail_('invalid', 'PIC (siapa) wajib diisi.');
   if (!isISO_(komitmen)) fail_('invalid', 'Tanggal komitmen (kapan) wajib diisi.');
+  pic = ensurePic_(pic); // PIC baru otomatis masuk daftar dropdown
   return withLock_(function () {
     var ss = db_(), rows = readTable_(ss, 'KENDALA'), now = Date.now();
     if (b.id) {
