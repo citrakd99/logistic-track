@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.9.0';
+var APP_VERSION = '1.9.1';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -67,6 +67,7 @@ function doPost(e) {
       case 'setKat': return actSetKat_(me, b);
       case 'saveKendala': return actSaveKendala_(me, b);
       case 'kendalaStatus': return actKendalaStatus_(me, b);
+      case 'hapusKendala': return actHapusKendala_(me, b);
       case 'setPics': return actSetPics_(me, b);
       case 'editPR': return actEditPR_(me, b);
       case 'addPRItems': return actAddPRItems_(me, b);
@@ -95,7 +96,7 @@ function staleFiles_() {
   if (String(readValues_).indexOf('tz_(') < 0) stale.push('Data.gs');
   if (typeof actSetViewerPin_ !== 'function' || String(loadPR_).indexOf('syncPRCopy_') < 0) stale.push('Data.gs/Auth.gs');
   if (String(actSetKat_).indexOf('upsertMaster_') < 0) stale.push('Stock.gs');
-  if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
+  if (typeof actHapusKendala_ !== 'function' || typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
   if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
   if (typeof actEditPR_ !== 'function') stale.push('PrEdit.gs');
   if (typeof relayCall_ !== 'function' || typeof writeFotoLinks_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');

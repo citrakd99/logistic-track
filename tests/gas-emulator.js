@@ -13,6 +13,7 @@ class Sheet {
   getMaxColumns() { return 26; }
   insertColumnsAfter() { }
   clearContents() { this.data = []; }
+  deleteRow(r) { this.data.splice(r - 1, 1); }
   hideColumns(c) { (this.hidden = this.hidden || new Set()).add(c); }
   setColumnWidth() { }
   getProtections() { return this.prot ? [this.prot] : []; }
