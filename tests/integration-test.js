@@ -127,6 +127,24 @@ t('Kendala PR: buat, validasi, geser komitmen wajib alasan, follow-up, selesai, 
   assert.ok(/komitmen 2026-11-12 → 2026-11-15 \(vendor minta tambahan 3 hari\)/.test(one.riwayat), one.riwayat);
   assert.strictEqual(String(one.itemNo), String(it.no));
 });
+t('Kendala: edit status open/closed, Sheet berisi "closed", hapus permanen + LOG', () => {
+  const it = pr.items[1], ss = env.SpreadsheetApp.openById(env.__props.DB_ID);
+  const c = g.post({ action: 'saveKendala', token: tok, prNo: it.prNo, itemNo: it.no, kategori: 'Lainnya', kendala: 'Uji close', rencana: 'cek', pic: 'Ahad', komitmen: '2026-11-20' }); assert.ok(c.ok, c.message);
+  const kf = () => g.get({ action: 'pr' }).data.kendala.find(x => x.id === c.data.id);
+  const base = { action: 'saveKendala', token: tok, id: c.data.id, kategori: 'Lainnya', kendala: 'Uji close', rencana: 'cek', pic: 'Ahad', komitmen: '2026-11-20' };
+  assert.ok(g.post(Object.assign({}, base, { status: 'closed' })).ok);
+  let k = kf(); assert.strictEqual(k.status, 'selesai'); assert.ok(+k.selesaiAt > 0); assert.ok(/status open → closed/.test(k.riwayat), k.riwayat);
+  const sh = ss.getSheetByName('KENDALA'), st = sh.getRange(1, 1, sh.getLastRow(), 21).getValues(), ci = st[0].indexOf('status');
+  assert.strictEqual(st.find(r => r[0] === c.data.id)[ci], 'closed', 'Sheet menulis "closed"');
+  assert.ok(g.post(Object.assign({}, base, { status: 'open' })).ok); k = kf(); assert.strictEqual(k.status, 'open'); assert.strictEqual(String(k.selesaiAt), '');
+  assert.ok(g.post({ action: 'kendalaStatus', token: tok, id: c.data.id, op: 'selesai' }).ok); assert.strictEqual(kf().status, 'selesai');
+  assert.strictEqual(g.post({ action: 'hapusKendala', id: c.data.id }).code, 'unauthorized', 'viewer tidak bisa hapus');
+  const n0 = sh.getLastRow(), l0 = ss.getSheetByName('LOG').getLastRow();
+  assert.ok(g.post({ action: 'hapusKendala', token: tok, id: c.data.id, reason: 'dobel' }).ok);
+  assert.strictEqual(sh.getLastRow(), n0 - 1, 'baris dihapus'); assert.ok(!kf(), 'tidak tampil lagi');
+  assert.ok(ss.getSheetByName('LOG').getLastRow() > l0, 'tercatat di LOG');
+  assert.strictEqual(g.post({ action: 'hapusKendala', token: tok, id: c.data.id }).code, 'invalid', 'hapus dua kali ditolak');
+});
 t('Daftar PIC: default 4 nama, PIC baru otomatis masuk daftar, admin bisa atur ulang', () => {
   let pl = g.get({ action: 'pr' }).data.picList; assert.strictEqual(JSON.stringify(pl.slice(0, 4)), '["Fitri","Aqsha","Ahad","Anggun"]');
   assert.ok(pl.includes('Rina (Procurement)'), 'PIC dari kendala sebelumnya ikut masuk');

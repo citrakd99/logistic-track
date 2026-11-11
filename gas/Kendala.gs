@@ -2,7 +2,7 @@
  * Kendala.gs — catatan kendala & action plan Tracking PR (hanya admin yang menulis).
  * Satu catatan = KENAPA (kendala) · APA (action) · SIAPA (PIC) · KAPAN (tanggal komitmen).
  * Disimpan di tab KENDALA (Master/Data Sheet) karena Sheet Tracking PR hanya bisa dilihat.
- * Status: open | selesai | batal. "Terlambat" dihitung di tampilan (komitmen < hari ini & open).
+ * Status di Sheet: open | closed | batal ("selesai" lama tetap dibaca sebagai closed). "Terlambat" dihitung di tampilan (komitmen < hari ini & open).
  */
 var DEFAULT_PICS = ['Fitri', 'Aqsha', 'Ahad', 'Anggun'];
 /** Daftar PIC untuk dropdown (Script Properties PIC_LIST; default 4 nama). */
@@ -26,6 +26,9 @@ function actSetPics_(me, b) {
 
 var KENDALA_KAT = ['Budget/Harga', 'Approval CC', 'Vendor/Supplier', 'Spesifikasi', 'Pengiriman', 'Administrasi PO', 'Lainnya'];
 
+/** Status baku: open | selesai (ditampilkan "Closed") | batal. Menerima ketikan Sheet: closed/close/selesai/done. */
+function kStatus_(v) { var s = String(v || 'open').trim().toLowerCase(); if (/^(closed?|selesai|done|ok)$/.test(s)) return 'selesai'; if (/^(batal|cancel)/.test(s)) return 'batal'; return 'open'; }
+var K_CLOSED = 'closed'; // nilai yang ditulis ke Sheet
 function listKendala_() {
   var rows;
   try { rows = readTable_(db_(), 'KENDALA'); } catch (e) { return []; } // Data Sheet belum diatur: Tracking PR tetap tampil
@@ -33,7 +36,7 @@ function listKendala_() {
   return rows.map(function (r) {
     var k = stripRow_(r);
     // nilai yang diketik langsung di Sheet dinormalkan
-    k.status = String(k.status || 'open').trim().toLowerCase();
+    k.status = kStatus_(k.status);
     if (k.komitmen && !isISO_(String(k.komitmen))) k.komitmen = pDate_(k.komitmen, t)[0] || String(k.komitmen);
     if (!k.prKey && k.prNo) k.prKey = keyOfPR_(k.prNo);
     if (k.itemNo !== '' && k.itemNo != null) k.itemNo = String(k.itemNo);
@@ -76,6 +79,11 @@ function actSaveKendala_(me, b) {
       if (r.action !== action) changes.push('action diubah');
       if (r.kendala !== kendala) changes.push('kendala diubah');
       if (r.kategori !== kategori) changes.push('kategori ' + r.kategori + ' → ' + kategori);
+      var stNew = b.status === 'closed' ? 'selesai' : b.status === 'open' ? 'open' : kStatus_(r.status);
+      if (stNew !== kStatus_(r.status)) {
+        changes.push('status ' + (kStatus_(r.status) === 'selesai' ? 'closed' : 'open') + ' → ' + (stNew === 'selesai' ? 'closed' : 'open'));
+        r.status = stNew === 'selesai' ? K_CLOSED : 'open'; r.selesaiAt = stNew === 'selesai' ? now : '';
+      }
       Object.assign(r, { kategori: kategori, kendala: kendala, action: action, pic: pic, komitmen: komitmen, updatedAt: now, updatedBy: me.email });
       if (changes.length) addRiwayat_(r, me, changes.join('; '));
       updateRow_(ss, 'KENDALA', old._row, r);
@@ -107,14 +115,26 @@ function actKendalaStatus_(me, b) {
     if (!old) fail_('invalid', 'Catatan kendala tidak ditemukan.');
     var r = stripRow_(old), now = Date.now();
     if (!r.id) r.id = 'k' + now.toString(36) + Utilities.getUuid().slice(0, 4);
-    r.status = String(r.status || 'open').trim().toLowerCase();
+    r.status = kStatus_(r.status);
     if (op === 'followup') { r.followup = note; r.followupAt = now; addRiwayat_(r, me, 'follow-up: ' + note); }
-    if (op === 'selesai') { if (r.status === 'selesai') fail_('invalid', 'Sudah selesai.'); r.status = 'selesai'; r.selesaiAt = now; addRiwayat_(r, me, 'SELESAI' + (note ? ': ' + note : '')); }
+    if (op === 'selesai') { if (r.status === 'selesai') fail_('invalid', 'Kendala sudah closed.'); r.status = K_CLOSED; r.selesaiAt = now; addRiwayat_(r, me, 'CLOSED' + (note ? ': ' + note : '')); }
     if (op === 'buka') { r.status = 'open'; r.selesaiAt = ''; addRiwayat_(r, me, 'dibuka lagi: ' + note); }
     if (op === 'batal') { r.status = 'batal'; addRiwayat_(r, me, 'dibatalkan: ' + note); }
     r.updatedAt = now; r.updatedBy = me.email;
     updateRow_(ss, 'KENDALA', old._row, r);
     log_(me.email, 'kendala:' + op, r.prNo + ' ' + note.slice(0, 80));
     return { id: r.id, status: r.status };
+  });
+}
+
+/** Hapus permanen satu catatan kendala (baris dihapus dari tab KENDALA; isinya disimpan di LOG). */
+function actHapusKendala_(me, b) {
+  return withLock_(function () {
+    var ss = db_(), rows = readTable_(ss, 'KENDALA'), old = findKendalaRow_(rows, b.id);
+    if (!old) fail_('invalid', 'Catatan kendala tidak ditemukan (mungkin sudah dihapus).');
+    var snap = stripRow_(old);
+    ss.getSheetByName('KENDALA').deleteRow(old._row);
+    log_(me.email, 'hapusKendala', JSON.stringify({ prNo: snap.prNo, itemNo: snap.itemNo, kendala: snap.kendala, action: snap.action, pic: snap.pic, komitmen: snap.komitmen, status: snap.status, alasan: pStr_(b.reason) }).slice(0, 480));
+    return { id: snap.id };
   });
 }

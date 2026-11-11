@@ -32,15 +32,17 @@ Syarat: akun pemilik script (ahadaja@gmail.com) adalah **Editor** di Sheet Track
 Untuk item/PR yang tersendat, admin mencatat **Kenapa** (kendala) · **Apa** (action plan) · **Siapa** (PIC) · **Kapan** (tanggal komitmen).
 - **PIC** dipilih dari dropdown (awal: Fitri, Aqsha, Ahad, Anggun). Pilih **+ Tambah PIC baru…** untuk mengetik nama baru, yang otomatis masuk daftar. Atur daftar (tambah / hapus / urutan) di **Pengaturan → Daftar PIC**.
 - **Catat:** Daftar PR → buka item → **+ Kendala**. Untuk masalah yang menyangkut satu PR utuh (mis. budget), buka PR → **+ Kendala seluruh PR**.
-- **Pantau:** menu **Kendala & action plan** — kotak *Kendala terbuka · Komitmen lewat · Jatuh tempo ≤ 3 hari · Selesai*, ringkasan per PIC, cari, export Excel untuk rapat.
-- **Follow-up:** klik catatan → **Follow-up** (isi hasil konfirmasi ke PIC) · **Edit / geser tanggal** (alasan wajib, jumlah geser tercatat) · **Tandai selesai** · **Batalkan**.
+- **Pantau:** menu **Kendala & action plan** — kotak *Kendala terbuka · Komitmen lewat · Jatuh tempo ≤ 3 hari · Closed*, ringkasan per PIC, cari, export Excel untuk rapat.
+- **Follow-up:** klik catatan → **Follow-up** (isi hasil konfirmasi ke PIC) · **Edit** (geser tanggal wajib alasan, jumlah geser tercatat; ubah **Status** Open ↔ Closed) · **✓ Close** · **Buka lagi** (untuk yang sudah closed).
+- **Close / hapus cepat:** di daftar Kendala dan di kartu kendala detail item ada tombol **✓ Close** dan **🗑** (hapus). Keduanya tetap minta konfirmasi.
+- **Hapus** = baris dihapus permanen dari tab KENDALA (isi & alasan tetap tercatat di tab LOG). Pakai untuk salah input / dobel.
 - Di Daftar PR, item/PR yang punya kendala diberi tanda **⚠** (merah jika komitmen sudah lewat). Chip filter *Ada kendala terbuka* / *Komitmen action lewat*.
 - Viewer (pemegang PIN) bisa melihat; hanya admin yang mengisi. Data disimpan di tab **KENDALA** pada Sheet Master; riwayat setiap perubahan ada di kolom *riwayat*.
 
 ### Edit dua arah: aplikasi ⇄ Google Sheet
 | Data | Dari aplikasi | Langsung di Sheet Master |
 |---|---|---|
-| Kendala & action plan (tab **KENDALA**) | ✔ | ✔ — dropdown *status* (open / selesai / batal), *kategori*, *pic*; kolom *komitmen* berupa tanggal (klik dua kali → kalender). Baris baru cukup isi **prNo, itemNo (kosong = seluruh PR), kategori, kendala, action, pic, komitmen** — ID & riwayat terisi otomatis. Mengubah tanggal komitmen di Sheet menambah hitungan *geser*. |
+| Kendala & action plan (tab **KENDALA**) | ✔ | ✔ — dropdown *status* (open / closed / batal; isian lama "selesai" otomatis dibaca sebagai closed), *kategori*, *pic*; kolom *komitmen* berupa tanggal (klik dua kali → kalender). Baris baru cukup isi **prNo, itemNo (kosong = seluruh PR), kategori, kendala, action, pic, komitmen** — ID & riwayat terisi otomatis. Mengubah tanggal komitmen di Sheet menambah hitungan *geser*. |
 | Barang (tab **MASTER**) | ✔ | ✔ — kategori, stok awal, rak, minimum, catatan; barang baru = baris baru |
 | Transaksi stok (TX), ITEMS, LOG, PR_DATA | ✔ | Sebaiknya jangan — Sheet memberi peringatan sebelum diedit |
 | Tracking PR | ✖ (hanya dibaca) | Diedit pemilik Sheet PR |

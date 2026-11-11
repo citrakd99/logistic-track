@@ -7,7 +7,7 @@
  * - Tab TX, ITEMS, LOG, PR_DATA diberi peringatan sebelum diedit (sebaiknya lewat aplikasi).
  */
 var K_HIDE = ['prKey', 'itemId', 'selesaiAt', 'followupAt', 'createdAt', 'updatedAt'];
-var K_STATUS = ['open', 'selesai', 'batal'];
+var K_STATUS = ['open', 'closed', 'batal'];
 
 function colOf_(name, h) { return TABS[name].indexOf(h) + 1; }
 
@@ -17,7 +17,7 @@ function rapikanTabKendala_() {
     var ss = db_(), sh = ss.getSheetByName('KENDALA'); if (!sh) return false;
     var n = Math.max(1, sh.getMaxRows() - 1), V = SpreadsheetApp.newDataValidation;
     var list = function (col, vals, help) { sh.getRange(2, colOf_('KENDALA', col), n, 1).setDataValidation(V().requireValueInList(vals, true).setAllowInvalid(col === 'pic').setHelpText(help).build()); };
-    list('status', K_STATUS, 'open = belum selesai · selesai · batal');
+    list('status', K_STATUS, 'open = belum selesai · closed = sudah selesai · batal');
     list('kategori', KENDALA_KAT, 'Kategori kendala');
     list('pic', picList_(), 'Pilih PIC; nama lain boleh diketik (akan ditambahkan ke daftar)');
     var kc = colOf_('KENDALA', 'komitmen'), kr = sh.getRange(2, kc, n, 1);
@@ -30,6 +30,8 @@ function rapikanTabKendala_() {
       kr.setNumberFormat('yyyy-mm-dd');
       if (changed) sh.getRange(2, kc, lr - 1, 1).setValues(vals);
     } else kr.setNumberFormat('yyyy-mm-dd');
+    var sc = colOf_('KENDALA', 'status');
+    if (lr >= 2) { var sv = sh.getRange(2, sc, lr - 1, 1).getValues(), ch = false; sv = sv.map(function (r) { if (String(r[0]).trim().toLowerCase() === 'selesai') { ch = true; return [K_CLOSED]; } return r; }); if (ch) sh.getRange(2, sc, lr - 1, 1).setValues(sv); }
     K_HIDE.forEach(function (h) { try { sh.hideColumns(colOf_('KENDALA', h)); } catch (e) { /* abaikan */ } });
     [['kendala', 260], ['action', 260], ['riwayat', 320], ['itemDesc', 200], ['pic', 120], ['followup', 220]].forEach(function (w) { try { sh.setColumnWidth(colOf_('KENDALA', w[0]), w[1]); } catch (e) { } });
     sh.setFrozenRows(1);
@@ -67,12 +69,12 @@ function saatSheetDiedit(e) {
     if (!o.id) { o.id = 'k' + now.toString(36) + Utilities.getUuid().slice(0, 4); o.createdAt = now; o.createdBy = 'Sheet'; o.riwayat = stamp_() + ' · Sheet: dibuat dari Sheet'; o.geser = 0; }
     if (o.prNo) o.prKey = keyOfPR_(o.prNo);
     if (!o.status) o.status = 'open';
-    o.status = String(o.status).trim().toLowerCase();
+    o.status = String(o.status).trim().toLowerCase(); if (kStatus_(o.status) === 'selesai') o.status = K_CLOSED;
     if (o.pic) o.pic = ensurePic_(cleanPic_(o.pic));
     if (header && header !== 'riwayat' && nr === 1 && e.oldValue !== undefined && String(e.oldValue) !== String(e.value)) {
       var old = e.oldValue, nv = e.value;
       if (header === 'komitmen') { o.geser = (+o.geser || 0) + 1; old = sheetDate_(old); nv = sheetDate_(nv); }
-      if (header === 'status' && o.status === 'selesai' && !o.selesaiAt) o.selesaiAt = now;
+      if (header === 'status' && kStatus_(o.status) === 'selesai' && !o.selesaiAt) o.selesaiAt = now;
       o.riwayat = (String(o.riwayat || '') + '\n' + stamp_() + ' · Sheet: ' + header + ' ' + (old || '-') + ' → ' + (nv || '-')).trim().slice(-4000);
     }
     o.updatedAt = now; o.updatedBy = 'Sheet';

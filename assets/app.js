@@ -231,7 +231,7 @@
   const kOpen = k => k.status === 'open';
   const kLate = k => kOpen(k) && isISO(k.komitmen) && k.komitmen < today();
   const kSoon = k => kOpen(k) && isISO(k.komitmen) && !kLate(k) && daysSince(k.komitmen) >= -3;
-  const kLabel = k => k.status === 'selesai' ? ['Selesai', 'p-kembali'] : kLate(k) ? [`Terlambat ${daysSince(k.komitmen)} hari`, 'p-out'] : kSoon(k) ? (k.komitmen === today() ? ['Jatuh tempo hari ini', 'p-low'] : [`${-daysSince(k.komitmen)} hari lagi`, 'p-low']) : ['Open', 'p-in'];
+  const kLabel = k => k.status === 'selesai' ? ['Closed', 'p-kembali'] : kLate(k) ? [`Terlambat ${daysSince(k.komitmen)} hari`, 'p-out'] : kSoon(k) ? (k.komitmen === today() ? ['Jatuh tempo hari ini', 'p-low'] : [`${-daysSince(k.komitmen)} hari lagi`, 'p-low']) : ['Open', 'p-in'];
   function indexKendala() {
     const s = state.pr; if (s._kIdx === s) return;
     s._kIdx = s; s.kByItem = new Map(); s.kByPR = new Map();
@@ -602,10 +602,15 @@
   function kendalaCards(list) {
     if (!list.length) return `<span class="hint">Belum ada kendala tercatat.${isAdmin() ? ' Tekan <b>+ Kendala</b> jika item ini tersendat.' : ''}</span>`;
     return list.sort((a, b) => (kOpen(b) - kOpen(a)) || String(a.komitmen).localeCompare(String(b.komitmen))).map(k => { const lb = kLabel(k); return `<div class="kcard ${kLate(k) ? 'late' : ''} ${k.status === 'selesai' ? 'done' : ''}" data-kid="${esc(k.id)}" role="button" tabindex="0">
-      <div class="khead"><span class="pill ${lb[1]}">${esc(lb[0])}</span><span class="kat">${esc(k.kategori)}</span>${k.itemNo === '' || k.itemNo == null ? '<span class="kat">seluruh PR</span>' : ''}${+k.geser ? `<span class="hint">digeser ${esc(k.geser)}×</span>` : ''}</div>
+      <div class="khead"><span class="pill ${lb[1]}">${esc(lb[0])}</span><span class="kat">${esc(k.kategori)}</span>${k.itemNo === '' || k.itemNo == null ? '<span class="kat">seluruh PR</span>' : ''}${+k.geser ? `<span class="hint">digeser ${esc(k.geser)}×</span>` : ''}${kQuick(k)}</div>
       <dl class="kv kkv"><dt>Kenapa</dt><dd>${esc(k.kendala)}</dd><dt>Action</dt><dd>${esc(k.action)}</dd><dt>Siapa (PIC)</dt><dd><b>${esc(k.pic)}</b></dd><dt>Kapan</dt><dd><b>${esc(fmtD(k.komitmen, true))}</b></dd>${k.followup ? `<dt>Follow-up</dt><dd>${esc(k.followup)} <span class="dim">(${esc(fmtDT(+k.followupAt))})</span></dd>` : ''}</dl></div>`; }).join('');
   }
-  function bindKendalaCards() { $$('.kcard[data-kid]').forEach(c => { c.onclick = () => openKendala(c.dataset.kid); c.onkeydown = e => { if (e.key === 'Enter') openKendala(c.dataset.kid); }; }); }
+  function kQuick(k) {
+    if (!isAdmin()) return '';
+    return `<span class="kq">${k.status === 'open' ? `<button class="btn xs" data-kq="selesai" data-kqid="${esc(k.id)}" title="Close kendala">✓ Close</button>` : ''}<button class="btn xs danger" data-kq="hapus" data-kqid="${esc(k.id)}" title="Hapus kendala" aria-label="Hapus kendala">🗑</button></span>`;
+  }
+  function bindKQuick(root) { $$('[data-kq]', root).forEach(b => { b.onclick = e => { e.stopPropagation(); const k = findK(b.dataset.kqid); if (k) openKendalaOp(k, b.dataset.kq); }; b.onkeydown = e => e.stopPropagation(); }); }
+  function bindKendalaCards() { bindKQuick(document); $$('.kcard[data-kid]').forEach(c => { c.onclick = () => openKendala(c.dataset.kid); c.onkeydown = e => { if (e.key === 'Enter') openKendala(c.dataset.kid); }; }); }
   const findK = id => (state.pr.kendala || []).find(k => k.id === id);
   const picList = () => { const base = state.pr.picList || ['Fitri', 'Aqsha', 'Ahad', 'Anggun'], low = base.map(x => x.toLowerCase()); return base.concat((state.pr.kendala || []).map(k => k.pic).filter(p => p && !low.includes(p.toLowerCase())).filter((p, i, a) => a.indexOf(p) === i)); };
   function kTarget(k) {
@@ -625,8 +630,8 @@
           <dt>Dicatat</dt><dd>${esc(fmtDT(+k.createdAt))} · ${esc(k.createdBy)}</dd></dl>
         <fieldset><legend>Riwayat</legend><div class="hint" style="white-space:pre-line">${esc(k.riwayat || '–')}</div></fieldset>`,
       foot: isAdmin() ? (k.status === 'open'
-        ? '<button class="btn sm danger" data-kop="batal">Batalkan</button><button class="btn sm" data-kop="edit">Edit / geser tanggal</button><button class="btn sm" data-kop="followup">Follow-up</button><button class="btn sm primary" data-kop="selesai">Tandai selesai</button>'
-        : '<button class="btn" data-close="1">Tutup</button><button class="btn sm" data-kop="buka">Buka lagi</button>') : '<button class="btn" data-close="1">Tutup</button>'
+        ? '<button class="btn sm danger" data-kop="hapus">🗑 Hapus</button><button class="btn sm" data-kop="edit">Edit</button><button class="btn sm" data-kop="followup">Follow-up</button><button class="btn sm primary" data-kop="selesai">✓ Close</button>'
+        : '<button class="btn sm danger" data-kop="hapus">🗑 Hapus</button><button class="btn sm" data-kop="edit">Edit</button><button class="btn sm" data-kop="buka">Buka lagi</button><button class="btn" data-close="1">Tutup</button>') : '<button class="btn" data-close="1">Tutup</button>'
     });
     $$('[data-kop]').forEach(b => b.onclick = () => b.dataset.kop === 'edit' ? openKendalaForm(k) : openKendalaOp(k, b.dataset.kop));
   }
@@ -641,6 +646,7 @@
           <div class="f"><label for="kPicSel">Siapa — PIC</label><select class="inp" id="kPicSel"><option value="">— pilih PIC —</option>${picList().map(p => `<option ${k && k.pic === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}<option value="__new">+ Tambah PIC baru…</option></select>
             <input class="inp" id="kPicNew" placeholder="Nama PIC baru" maxlength="40" hidden style="margin-top:6px"></div>
           <div class="f"><label for="kWhen">Kapan — tanggal komitmen</label><input class="inp" type="date" id="kWhen" value="${k ? esc(k.komitmen) : ''}"></div>
+          ${k ? `<div class="f"><label for="kSt">Status</label><select class="inp" id="kSt"><option value="open" ${k.status !== 'selesai' ? 'selected' : ''}>Open</option><option value="closed" ${k.status === 'selesai' ? 'selected' : ''}>Closed (selesai)</option></select></div>` : ''}
           ${k ? '<div class="f wide" id="kGeserBox" hidden><label for="kGeser">Alasan tanggal komitmen digeser</label><input class="inp" id="kGeser" placeholder="wajib jika tanggal berubah"></div>' : ''}
         </div><div id="kErr"></div>`,
       foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="kSave">Simpan</button>'
@@ -652,15 +658,17 @@
       if (!val('kWhy') || !val('kWhat') || !picVal() || !val('kWhen')) { showErr('kErr', 'Isi lengkap: kenapa, action, PIC, dan tanggal komitmen.'); return; }
       if (k && val('kWhen') !== k.komitmen && !val('kGeser')) { showErr('kErr', 'Tanggal komitmen berubah: isi alasannya.'); return; }
       const body = Object.assign(k ? { id: k.id } : { prNo: t.prNo, itemNo: t.itemNo, itemId: t.itemId, itemDesc: t.itemDesc },
-        { kategori: val('kKat'), kendala: val('kWhy'), rencana: val('kWhat'), pic: picVal(), komitmen: val('kWhen'), alasanGeser: k ? val('kGeser') : '' });
+        { kategori: val('kKat'), kendala: val('kWhy'), rencana: val('kWhat'), pic: picVal(), komitmen: val('kWhen'), alasanGeser: k ? val('kGeser') : '' }, k ? { status: $('#kSt').value } : {});
       submit('kSave', 'kErr', () => apiPost('saveKendala', body), k ? 'Kendala diperbarui' : 'Kendala dicatat',
         { title: k ? 'Simpan perubahan kendala?' : 'Catat kendala baru?', rows: [['Untuk', esc(kTarget(Object.assign({ prKey: '' }, t)))], ['Kenapa', esc(body.kendala)], ['Action', esc(body.rencana)], ['PIC', `<b>${esc(body.pic)}</b>${$('#kPicSel').value === '__new' ? ' <span class="dim">(PIC baru, ditambahkan ke daftar)</span>' : ''}`],
+          k && (body.status === 'closed') !== (k.status === 'selesai') ? ['Status', `<b>${body.status === 'closed' ? 'Closed' : 'Open'}</b>`] : null,
           ['Komitmen', k && k.komitmen !== body.komitmen ? `<s class="dim">${esc(fmtD(k.komitmen, true))}</s> → <b>${esc(fmtD(body.komitmen, true))}</b> (${esc(body.alasanGeser)})` : `<b>${esc(fmtD(body.komitmen, true))}</b>`]] });
     };
   }
   function openKendalaOp(k, op) {
     const T = { followup: ['Catat follow-up', 'Hasil follow-up (wajib)', 'mis. PIC konfirmasi barang dikirim Kamis', 'Follow-up tersimpan', false],
-      selesai: ['Tandai kendala selesai', 'Catatan penyelesaian (opsional)', 'mis. barang sudah diterima', 'Kendala selesai', false],
+      selesai: ['Close kendala', 'Catatan penyelesaian (opsional)', 'mis. barang sudah diterima', 'Kendala closed', false],
+      hapus: ['Hapus kendala', 'Alasan dihapus (opsional)', 'mis. salah input / dobel', 'Kendala dihapus', true],
       buka: ['Buka lagi kendala', 'Alasan dibuka lagi (wajib)', '', 'Kendala dibuka lagi', false],
       batal: ['Batalkan catatan kendala', 'Alasan pembatalan (wajib)', 'mis. salah input', 'Kendala dibatalkan', true] }[op];
     openDrawer({
@@ -669,8 +677,9 @@
         <div class="f"><label for="kNote">${T[1]}</label><textarea class="inp" id="kNote" placeholder="${esc(T[2])}"></textarea></div><div id="kErr"></div>`,
       foot: `<button class="btn" data-close="1">Kembali</button><button class="btn ${T[4] ? 'danger' : 'primary'}" id="kGo">${esc(T[0])}</button>`
     });
-    $('#kGo').onclick = () => submit('kGo', 'kErr', () => apiPost('kendalaStatus', { id: k.id, op, note: val('kNote') }), T[3],
-      () => ({ title: T[0] + '?', rows: [['Kendala', esc(k.kendala)], ['PIC', esc(k.pic)], ['Catatan', esc(val('kNote'))]], ok: 'Ya', danger: T[4] }));
+    $('#kGo').onclick = () => submit('kGo', 'kErr', () => op === 'hapus' ? apiPost('hapusKendala', { id: k.id, reason: val('kNote') }) : apiPost('kendalaStatus', { id: k.id, op, note: val('kNote') }), T[3],
+      () => ({ title: T[0] + '?', rows: [['Kendala', esc(k.kendala)], ['PIC', esc(k.pic)], ['Catatan', esc(val('kNote'))]], ok: op === 'hapus' ? 'Ya, hapus' : 'Ya', danger: T[4],
+        note: op === 'hapus' ? 'Catatan dihapus permanen dari tab KENDALA (isinya tetap tersimpan di LOG).' : '' }));
   }
 
   function renderKendalaList(v) {
@@ -685,23 +694,24 @@
     open.forEach(k => { const p = byPic[k.pic] || (byPic[k.pic] = { n: 0, late: 0 }); p.n++; if (kLate(k)) p.late++; });
     const cnt = { open: open.length, late: open.filter(kLate).length, soon: open.filter(kSoon).length, selesai: all.filter(k => k.status === 'selesai').length, semua: all.length };
     v.innerHTML = `${prTabs()}
-      <div class="kpis" style="grid-template-columns:repeat(4,minmax(130px,1fr))">${[['open', 'k-in', 'Kendala terbuka', 'belum selesai'], ['late', 'k-out', 'Komitmen lewat', 'perlu di-follow-up'], ['soon', 'k-low', 'Jatuh tempo ≤ 3 hari', 'ingatkan PIC'], ['selesai', 'k-ok', 'Selesai', 'sudah tuntas']].map(([key, cls, l, w]) => `<button class="kpi ${cls} ${f.st === key ? 'on' : ''}" data-kst="${key}"><span class="lbl">${l}</span><span class="n">${cnt[key]}</span><span class="w">${w}</span></button>`).join('')}</div>
+      <div class="kpis" style="grid-template-columns:repeat(4,minmax(130px,1fr))">${[['open', 'k-in', 'Kendala terbuka', 'belum selesai'], ['late', 'k-out', 'Komitmen lewat', 'perlu di-follow-up'], ['soon', 'k-low', 'Jatuh tempo ≤ 3 hari', 'ingatkan PIC'], ['selesai', 'k-ok', 'Closed', 'sudah tuntas']].map(([key, cls, l, w]) => `<button class="kpi ${cls} ${f.st === key ? 'on' : ''}" data-kst="${key}"><span class="lbl">${l}</span><span class="n">${cnt[key]}</span><span class="w">${w}</span></button>`).join('')}</div>
       ${Object.keys(byPic).length ? `<div class="chips"><span class="chip static">Per PIC:</span>${Object.entries(byPic).sort((a, b) => b[1].late - a[1].late || b[1].n - a[1].n).map(([p, c]) => `<button class="chip ${f.pic === p ? 'on' : ''} ${c.late ? 'warn' : ''}" data-kpic="${esc(p)}">${esc(p)} · ${c.n}${c.late ? ` · <b>${c.late} lewat</b>` : ''}</button>`).join('')}</div>` : ''}
       <div class="tools"><input class="inp grow" id="kq" type="search" placeholder="Cari PR, barang, kendala, PIC…" value="${esc(f.q)}" aria-label="Cari kendala">
-        <select class="inp" id="kst" style="width:auto" aria-label="Status">${[['open', 'Terbuka'], ['late', 'Komitmen lewat'], ['soon', 'Jatuh tempo ≤ 3 hari'], ['selesai', 'Selesai'], ['semua', 'Semua']].map(([k2, l]) => `<option value="${k2}" ${f.st === k2 ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select class="inp" id="kst" style="width:auto" aria-label="Status">${[['open', 'Terbuka'], ['late', 'Komitmen lewat'], ['soon', 'Jatuh tempo ≤ 3 hari'], ['selesai', 'Closed'], ['semua', 'Semua']].map(([k2, l]) => `<option value="${k2}" ${f.st === k2 ? 'selected' : ''}>${l}</option>`).join('')}</select>
         ${f.pic ? `<button class="chip on" id="kpicClr">PIC: ${esc(f.pic)} ✕</button>` : ''}<button class="btn sm" id="kxlsx">Excel</button><button class="btn sm" data-allk="1">Excel lengkap</button></div>
       <div class="resultline">${list.length} catatan${isAdmin() ? ' · tambah kendala dari detail item di Daftar PR' : ''}</div>
       <div class="table">${list.length ? `<div class="kr head"><div>Kapan</div><div>PR / item</div><div>Kenapa → Action</div><div>Siapa</div><div class="c-hide">Follow-up terakhir</div></div>` + list.map(k => { const lb = kLabel(k); return `<div class="kr" data-kid="${esc(k.id)}" role="button" tabindex="0">
           <div><b>${esc(fmtD(k.komitmen))}</b><br><span class="pill ${lb[1]}">${esc(lb[0])}</span>${+k.geser ? `<div class="hint">digeser ${esc(k.geser)}×</div>` : ''}</div>
           <div><span class="prno">${esc(k.prNo)}</span><div class="hint">${esc(k.itemNo !== '' && k.itemNo != null ? 'item ' + k.itemNo + ' · ' + (k.itemDesc || '') : 'seluruh PR')}</div></div>
           <div><div><span class="kat">${esc(k.kategori)}</span> ${esc(k.kendala)}</div><div class="hint">→ ${esc(k.action)}</div></div>
-          <div><b>${esc(k.pic)}</b></div>
+          <div><b>${esc(k.pic)}</b>${kQuick(k) ? `<div style="margin-top:6px">${kQuick(k)}</div>` : ''}</div>
           <div class="c-hide hint">${k.followup ? esc(k.followup) + '<br>' + esc(fmtDT(+k.followupAt)) : '–'}</div></div>`; }).join('') : '<div class="empty" style="border:0">Tidak ada catatan untuk filter ini.</div>'}</div>`;
     $$('[data-kst]', v).forEach(b => b.onclick = () => { f.st = b.dataset.kst; render(); });
     $('#kst').onchange = e => { f.st = e.target.value; render(); };
     $$('[data-kpic]', v).forEach(b => b.onclick = () => { f.pic = f.pic === b.dataset.kpic ? '' : b.dataset.kpic; render(); });
     const pc = $('#kpicClr'); if (pc) pc.onclick = () => { f.pic = ''; render(); };
     let qt; $('#kq').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { f.q = e.target.value.trim(); render(); const i = $('#kq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
+    bindKQuick(v);
     $$('.kr[data-kid]', v).forEach(r => { r.onclick = () => openKendala(r.dataset.kid); r.onkeydown = e => { if (e.key === 'Enter') openKendala(r.dataset.kid); }; });
     $$('[data-allk]', v).forEach(b => b.onclick = () => exportAll(b));
     $('#kxlsx').onclick = async () => {
@@ -757,7 +767,7 @@
       STATUSES.forEach(st => rows.push([st.k, state.pr.items.filter(i => i.status === st.k).length]));
       rows.push(['Total item', state.pr.items.length], ['Total PR', state.pr.prs.length], []);
       const ks = state.pr.kendala || [];
-      rows.push(['Kendala', 'Jumlah'], ['Terbuka', ks.filter(kOpen).length], ['Komitmen lewat', ks.filter(kLate).length], ['Selesai', ks.filter(k => k.status === 'selesai').length], []);
+      rows.push(['Kendala', 'Jumlah'], ['Terbuka', ks.filter(kOpen).length], ['Komitmen lewat', ks.filter(kLate).length], ['Closed', ks.filter(k => k.status === 'selesai').length], []);
       const byPic = {}; ks.filter(kOpen).forEach(k => { const p = byPic[k.pic] || (byPic[k.pic] = [0, 0]); p[0]++; if (kLate(k)) p[1]++; });
       rows.push(['PIC', 'Terbuka', 'Lewat komitmen']); Object.entries(byPic).forEach(([p, c]) => rows.push([p, c[0], c[1]])); rows.push([]);
       rows.push(['Foto surat jalan', (state.pr.foto || []).length]);
@@ -1310,7 +1320,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.9.0';
+    $('#ver').textContent = 'v1.9.1';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }
