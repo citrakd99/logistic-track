@@ -10,7 +10,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.8.1';
+var APP_VERSION = '1.9.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -78,6 +78,8 @@ function doPost(e) {
       case 'nextPRNo': return actNextPRNo_();
       case 'uploadSJ': return actUploadSJ_(me, b);
       case 'hapusFoto': return actHapusFoto_(me, b);
+      case 'setFotoStore': return actSetFotoStore_(me, b);
+      case 'migrateFoto': return actMigrateFoto_(me);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);
@@ -100,7 +102,7 @@ function staleFiles_() {
   if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
   if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
   if (typeof actEditPR_ !== 'function') stale.push('PrEdit.gs');
-  if (typeof writeFotoLinks_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
+  if (typeof relayCall_ !== 'function' || typeof writeFotoLinks_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
   return stale;
 }
 function actStatus_() {
@@ -116,7 +118,7 @@ function srcView_(id) {
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
   var pc = pinCfg_();
-  return { prCanWrite: prCanWrite_(), picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  return { fotoStore: actFotoStoreInfo_(), prCanWrite: prCanWrite_(), picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**
@@ -421,7 +423,7 @@ var TABS = {
   TX: ['id', 'type', 'key', 'name', 'unit', 'kat', 'qty', 'date', 'person', 'purpose', 'cond', 'note', 'loanId', 'reason', 'createdAt', 'createdBy', 'void', 'voidReason', 'voidAt', 'voidBy', 'replaces'],
   ITEMS: ['key', 'name', 'unit', 'kat', 'awal', 'rak', 'min', 'note', 'hidden', 'full', 'source', 'updatedAt', 'updatedBy'],
   LOG: ['at', 'email', 'action', 'detail', 'result'],
-  FOTO_SJ: ['id', 'prKey', 'prNo', 'sjNo', 'items', 'fileId', 'fileName', 'folder', 'url', 'size', 'thumb', 'note', 'status', 'uploadedAt', 'uploadedBy'],
+  FOTO_SJ: ['id', 'prKey', 'prNo', 'sjNo', 'items', 'fileId', 'fileName', 'folder', 'url', 'size', 'thumb', 'note', 'status', 'uploadedAt', 'uploadedBy', 'store'],
   KENDALA: ['id', 'prKey', 'prNo', 'itemNo', 'itemId', 'itemDesc', 'kategori', 'kendala', 'action', 'pic', 'komitmen', 'status', 'selesaiAt', 'followup', 'followupAt', 'geser', 'riwayat', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']
 };
 // kolom yang dipaksa teks agar Sheets tidak mengubah "3/4 inch" atau tanggal jadi nilai lain
@@ -576,6 +578,11 @@ function db_() {
 function ensureTab_(ss, name, headers) {
   var sh = ss.getSheetByName(name);
   if (!sh) { sh = ss.insertSheet(name); }
+  if (sh.getLastRow() > 0) {
+    // tab lama dengan kolom lebih sedikit: tambahkan judul kolom baru di kanan (data lama tetap)
+    var cur = sh.getRange(1, 1, 1, headers.length).getValues()[0];
+    headers.forEach(function (h, i) { if (cur[i] === '' || cur[i] === null) { if (i >= cur.filter(function (x) { return x !== '' && x !== null; }).length) sh.getRange(1, i + 1).setValue(h).setFontWeight('bold'); } });
+  }
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
     sh.setFrozenRows(1);
@@ -1339,18 +1346,32 @@ function actUploadSJ_(me, b) {
   var files = Array.isArray(b.files) ? b.files : [], prNo = pStr_(b.prNo), sj = pStr_(b.sjNo).slice(0, 40), note = pStr_(b.note).slice(0, 300);
   if (!prNo) fail_('invalid', 'No. PR wajib.');
   if (!files.length || files.length > FOTO_MAX_FILES) fail_('invalid', 'Kirim 1–' + FOTO_MAX_FILES + ' foto sekaligus.');
-  var day = todayISO_(), folder = folderPath_(['LoGistic Tracking', 'Surat Jalan', day]), now = Date.now(), rows = [];
+  var day = todayISO_(), now = Date.now(), rows = [];
   var hhmmss = Utilities.formatDate(new Date(), tz_(), 'HHmmss'), safe = function (s) { return String(s).replace(/[^A-Za-z0-9-]+/g, ''); };
-  files.forEach(function (f, i) {
+  var rc = relayCfg_(), store = rc.url ? 'relay' : 'local', desc = 'Surat jalan ' + prNo + (sj ? ' · SJ ' + sj : '') + (note ? ' · ' + note : '') + ' · diunggah ' + me.email;
+  var prepared = files.map(function (f, i) {
     var mime = /^image\/(jpeg|png|webp)$/.test(f.mime) ? f.mime : 'image/jpeg';
     var bytes; try { bytes = Utilities.base64Decode(String(f.data || '')); } catch (e) { fail_('invalid', 'Foto ' + (i + 1) + ' rusak.'); }
     if (!bytes.length || bytes.length > FOTO_MAX_BYTES) fail_('invalid', 'Foto ' + (i + 1) + ' terlalu besar (maks 6 MB).');
-    var name = 'SJ_' + safe(prNo) + (sj ? '_' + safe(sj) : '') + '_' + hhmmss + '_' + (i + 1) + (mime === 'image/png' ? '.png' : '.jpg');
-    var file = folder.createFile(Utilities.newBlob(bytes, mime, name));
-    try { file.setDescription('Surat jalan ' + prNo + (sj ? ' · SJ ' + sj : '') + (note ? ' · ' + note : '') + ' · diunggah ' + me.email); } catch (e) { }
+    return { mime: mime, bytes: bytes, data: String(f.data), thumb: String(f.thumb || '').slice(0, 45000), name: 'SJ_' + safe(prNo) + (sj ? '_' + safe(sj) : '') + '_' + hhmmss + '_' + (i + 1) + (mime === 'image/png' ? '.png' : '.jpg') };
+  });
+  var saved; // [{fileId, url, name, size}]
+  if (store === 'relay') {
+    var res = relayCall_({ action: 'upload', day: day, description: desc, publicLink: rc.pub, files: prepared.map(function (x) { return { data: x.data, mime: x.mime, name: x.name }; }) });
+    saved = res.files; day = res.folder || day;
+  } else {
+    var folder = folderPath_(['LoGistic Tracking', 'Surat Jalan', day]);
+    saved = prepared.map(function (x) {
+      var file = folder.createFile(Utilities.newBlob(x.bytes, x.mime, x.name));
+      try { file.setDescription(desc); } catch (e) { }
+      if (rc.pub) { try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { } }
+      return { fileId: file.getId(), url: file.getUrl(), name: x.name, size: x.bytes.length };
+    });
+  }
+  saved.forEach(function (sv, i) {
     rows.push({ id: 'f' + now.toString(36) + i + Utilities.getUuid().slice(0, 4), prKey: keyOfPR_(prNo), prNo: prNo, sjNo: sj, items: pStr_(b.items).slice(0, 200),
-      fileId: file.getId(), fileName: name, folder: day, url: file.getUrl(), size: bytes.length, thumb: String(f.thumb || '').slice(0, 45000),
-      note: note, status: 'aktif', uploadedAt: now, uploadedBy: me.email });
+      fileId: sv.fileId, fileName: sv.name, folder: day, url: sv.url, size: sv.size, thumb: prepared[i].thumb,
+      note: note, status: 'aktif', uploadedAt: now, uploadedBy: me.email, store: store });
   });
   // item yang ditautkan: dari detail item → item itu; dari PR → item dengan No. SJ sama; selain itu semua item PR
   var targetItems = pStr_(b.items);
@@ -1364,20 +1385,21 @@ function actUploadSJ_(me, b) {
   rows.forEach(function (r) { r.items = targetItems; });
   var ss = db_(); appendRows_(ss, 'FOTO_SJ', rows); bumpDataVersion_();
   var link = writeFotoLinks_(keyOfPR_(prNo));
-  shareFotoWithPRTeam_(rows.map(function (r) { return r.fileId; }));
+  if (store === 'local' && !rc.pub) shareFotoWithPRTeam_(rows.map(function (r) { return r.fileId; }));
   log_(me.email, 'uploadSJ', prNo + (sj ? ' SJ ' + sj : '') + ' · ' + rows.length + ' foto → Surat Jalan/' + day + (link.ok ? ' · link di kolom V' : ' · link tidak ditulis: ' + link.reason));
-  return { saved: rows.length, folder: 'LoGistic Tracking / Surat Jalan / ' + day, linkWritten: link.ok, linkNote: link.reason || '' };
+  return { saved: rows.length, store: store, owner: store === 'relay' ? rc.owner : '', folder: 'LoGistic Tracking / Surat Jalan / ' + day, linkWritten: link.ok, linkNote: link.reason || '' };
 }
 /** Thumbnail semua foto 1 PR (untuk galeri). */
 function actFotoThumbs_(b) {
   var key = keyOfPR_(pStr_(b.prNo));
   return readTable_(db_(), 'FOTO_SJ').filter(function (r) { return r.prKey === key && r.status !== 'dihapus'; })
-    .map(function (r) { return { id: r.id, thumb: r.thumb, sjNo: r.sjNo, note: r.note, uploadedAt: r.uploadedAt, uploadedBy: r.uploadedBy, folder: r.folder }; });
+    .map(function (r) { return { id: r.id, url: r.url, thumb: r.thumb, sjNo: r.sjNo, note: r.note, uploadedAt: r.uploadedAt, uploadedBy: r.uploadedBy, folder: r.folder }; });
 }
 /** Gambar ukuran penuh (base64) — dikirim lewat script agar file Drive tetap privat. */
 function actFotoFull_(b) {
   var r = readTable_(db_(), 'FOTO_SJ').filter(function (x) { return x.id === b.id && x.status !== 'dihapus'; })[0];
   if (!r) fail_('invalid', 'Foto tidak ditemukan.');
+  if (r.store === 'relay') { var x = relayCall_({ action: 'full', fileId: r.fileId }); return { id: r.id, mime: x.mime, data: x.data, name: r.fileName }; }
   var blob = DriveApp.getFileById(r.fileId).getBlob();
   return { id: r.id, mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()), name: r.fileName };
 }
@@ -1386,7 +1408,7 @@ function actHapusFoto_(me, b) {
   return withLock_(function () {
     var ss = db_(), r = readTable_(ss, 'FOTO_SJ').filter(function (x) { return x.id === b.id; })[0];
     if (!r) fail_('invalid', 'Foto tidak ditemukan.');
-    try { DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) { }
+    try { if (r.store === 'relay') relayCall_({ action: 'trash', fileId: r.fileId }); else DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) { }
     var o = stripRow_(r); o.status = 'dihapus'; o.note = (o.note ? o.note + ' · ' : '') + 'dihapus: ' + reason;
     updateRow_(ss, 'FOTO_SJ', r._row, o);
     writeFotoLinks_(r.prKey);
@@ -1446,6 +1468,62 @@ function shareFotoWithPRTeam_(fileIds) {
     if (!list.length) return;
     fileIds.forEach(function (id) { try { DriveApp.getFileById(id).addViewers(list); } catch (x) { } });
   } catch (e) { /* berbagi gagal: foto tetap tersimpan & tampil di aplikasi */ }
+}
+
+// ---------- penyimpanan foto di Drive akun lain (relay, mis. prc.citrakd) ----------
+function relayCfg_() {
+  var p = props_();
+  return { url: p.getProperty('FOTO_RELAY_URL') || '', key: p.getProperty('FOTO_RELAY_KEY') || '', owner: p.getProperty('FOTO_RELAY_OWNER') || '', pub: p.getProperty('FOTO_PUBLIC') !== '0' };
+}
+function relayCall_(body, cfg) {
+  var c = cfg || relayCfg_();
+  if (!c.url || !c.key) fail_('not_configured', 'Penyimpanan foto (relay) belum diatur.');
+  var resp, j;
+  try {
+    resp = UrlFetchApp.fetch(c.url, { method: 'post', contentType: 'text/plain;charset=utf-8', payload: JSON.stringify(Object.assign({ key: c.key }, body)), muteHttpExceptions: true, followRedirects: true });
+    j = JSON.parse(resp.getContentText());
+  } catch (e) { fail_('relay', 'Script foto di akun penyimpan tidak bisa dihubungi. Periksa URL relay / deployment-nya. (' + (e.message || e) + ')'); }
+  if (!j.ok) fail_('relay', 'Penyimpanan foto menolak: ' + j.message);
+  return j.data;
+}
+function actFotoStoreInfo_() {
+  var c = relayCfg_(), n = 0;
+  try { n = readTable_(db_(), 'FOTO_SJ').filter(function (r) { return r.status !== 'dihapus' && r.store !== 'relay'; }).length; } catch (e) { }
+  return { mode: c.url ? 'relay' : 'local', owner: c.owner, relayUrl: c.url ? c.url.replace(/\/s\/(.{6}).+(.{4})\/exec/, '/s/$1…$2/exec') : '', publicLink: c.pub, localCount: n };
+}
+/** Admin: pakai relay (url+key, diuji dulu dengan ping) atau kembali ke Drive pemilik script (mode local). */
+function actSetFotoStore_(me, b) {
+  var p = props_();
+  if (typeof b.publicLink === 'boolean') p.setProperty('FOTO_PUBLIC', b.publicLink ? '1' : '0');
+  if (b.mode === 'local') { ['FOTO_RELAY_URL', 'FOTO_RELAY_KEY', 'FOTO_RELAY_OWNER'].forEach(function (k) { p.deleteProperty(k); }); log_(me.email, 'fotoStore', 'local'); return actFotoStoreInfo_(); }
+  if (b.mode === 'relay') {
+    var url = pStr_(b.url) || relayCfg_().url, key = pStr_(b.key) || relayCfg_().key;
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) fail_('invalid', 'URL relay harus URL Web App Apps Script (…/exec).');
+    if (!key) fail_('invalid', 'Kunci relay wajib diisi.');
+    var ping = relayCall_({ action: 'ping' }, { url: url, key: key });
+    p.setProperties({ FOTO_RELAY_URL: url, FOTO_RELAY_KEY: key, FOTO_RELAY_OWNER: ping.owner || '' });
+    log_(me.email, 'fotoStore', 'relay → ' + ping.owner);
+  }
+  return actFotoStoreInfo_();
+}
+/** Admin: pindahkan foto lama (Drive pemilik script) ke penyimpanan relay, bertahap (maks 10 per panggilan). */
+function actMigrateFoto_(me) {
+  var c = relayCfg_(); if (!c.url) fail_('not_configured', 'Atur penyimpanan relay dulu.');
+  return withLock_(function () {
+    var ss = db_(), rows = readTable_(ss, 'FOTO_SJ').filter(function (r) { return r.status !== 'dihapus' && r.store !== 'relay'; });
+    var batch = rows.slice(0, 10), prs = {}, moved = 0;
+    batch.forEach(function (r) {
+      var f = DriveApp.getFileById(r.fileId), blob = f.getBlob();
+      var res = relayCall_({ action: 'upload', day: r.folder, publicLink: c.pub, description: 'Surat jalan ' + r.prNo + (r.sjNo ? ' · SJ ' + r.sjNo : '') + ' (dipindahkan)', files: [{ data: Utilities.base64Encode(blob.getBytes()), mime: blob.getContentType(), name: r.fileName }] });
+      var o = stripRow_(r), sv = res.files[0]; o.fileId = sv.fileId; o.url = sv.url; o.store = 'relay';
+      updateRow_(ss, 'FOTO_SJ', r._row, o);
+      try { f.setTrashed(true); } catch (e) { }
+      prs[r.prKey] = 1; moved++;
+    });
+    Object.keys(prs).forEach(writeFotoLinks_);
+    log_(me.email, 'migrateFoto', moved + ' foto → ' + c.owner);
+    return { moved: moved, remaining: rows.length - moved };
+  });
 }
 
 // ===== Logic.gs =====

@@ -51,10 +51,10 @@ function createEnv(opts = {}) {
   const folders = {};
   function mkFolder(id, name, parent) {
     if (folders[id]) return folders[id];
-    const f = { id, name, parent, getId: () => id, getName: () => name, isTrashed: () => false,
+    const f = { id, name, parent, getId: () => id, getName: () => name, isTrashed: () => false, getUrl: () => 'https://drive.google.com/drive/folders/' + id,
       getFoldersByName: n => { const hit = Object.values(folders).filter(x => x.parent === id && x.name === n); let i = 0; return { hasNext: () => i < hit.length, next: () => hit[i++] }; },
       createFolder: n => mkFolder('fold' + Object.keys(folders).length, n, id),
-      createFile: blob => { const fid = 'file' + Object.keys(files).length + crypto.randomUUID().slice(0, 4); files[fid] = { name: blob.getName(), mime: blob.getContentType(), updated: Date.now(), bytes: blob.getBytes(), folder: id }; return { getId: () => fid, getUrl: () => 'https://drive.google.com/file/d/' + fid + '/view', setDescription() { } }; } };
+      createFile: blob => { const fid = 'file' + Object.keys(files).length + crypto.randomUUID().slice(0, 4); files[fid] = { name: blob.getName(), mime: blob.getContentType(), updated: Date.now(), bytes: blob.getBytes(), folder: id }; files[fid].owner = opts.email || 'owner@x.co'; return { getId: () => fid, getUrl: () => 'https://drive.google.com/file/d/' + fid + '/view', setDescription() { }, setSharing: (a, p) => { files[fid].sharing = a + ':' + p; } }; } };
     folders[id] = f; return f;
   }
   const props = {}, cache = new Map();
@@ -72,7 +72,8 @@ function createEnv(opts = {}) {
       remove: k => cache.delete(k)
     }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => { }, releaseLock: () => { } }) },
-    Session: { getScriptTimeZone: () => 'Asia/Jakarta', getEffectiveUser: () => ({ getEmail: () => 'owner@x.co' }) },
+    Session: { getScriptTimeZone: () => 'Asia/Jakarta', getEffectiveUser: () => ({ getEmail: () => opts.email || 'owner@x.co' }) },
+    UrlFetchApp: { fetch: (url, params) => { if (!opts.urlFetch) throw new Error('UrlFetch tidak tersedia'); const body = opts.urlFetch(url, params); return { getContentText: () => body, getResponseCode: () => 200 }; } },
     Utilities: {
       Charset: { UTF_8: 'utf8' },
       getUuid: () => crypto.randomUUID(),
@@ -89,12 +90,13 @@ function createEnv(opts = {}) {
       }
     },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ content: s, setMimeType() { return this; } }) },
+
     DriveApp: {
       Permission: { EDIT: 'EDIT', VIEW: 'VIEW' }, Access: { PRIVATE: 'PRIVATE', ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
       getRootFolder: () => mkFolder('root', 'My Drive'),
       getFolderById: id => { if (!folders[id]) throw new Error('no folder'); return folders[id]; },
       getFileById: id => { const f = files[id]; if (!f) throw new Error('File not found: ' + id);
-        return { getOwner: () => ({ getEmail: () => f.owner || 'owner@x.co' }), getEditors: () => (f.editors || []).map(e => ({ getEmail: () => e })), getViewers: () => (f.viewers || []).map(e => ({ getEmail: () => e })), addViewers: l => { f.sharedWith = (f.sharedWith || []).concat(l); }, getSharingPermission: () => 'VIEW', getSharingAccess: () => 'ANYONE_WITH_LINK', getName: () => f.name, getMimeType: () => f.mime, getLastUpdated: () => new Date(f.updated), getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getBlob: () => f.bytes ? { getBytes: () => f.bytes, getContentType: () => f.mime, rows: f.rows } : { rows: f.rows }, setTrashed: () => { f.trashed = true; } }; }
+        return { getOwner: () => ({ getEmail: () => f.owner || 'owner@x.co' }), getEditors: () => (f.editors || []).map(e => ({ getEmail: () => e })), getViewers: () => (f.viewers || []).map(e => ({ getEmail: () => e })), addViewers: l => { f.sharedWith = (f.sharedWith || []).concat(l); }, getSharingPermission: () => 'VIEW', getSharingAccess: () => 'ANYONE_WITH_LINK', getName: () => f.name, getMimeType: () => f.mime, getLastUpdated: () => new Date(f.updated), getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id + '/edit', getBlob: () => f.bytes ? { getBytes: () => f.bytes, getContentType: () => f.mime, rows: f.rows } : { rows: f.rows }, setTrashed: () => { f.trashed = true; }, setSharing: (a, p) => { f.sharing = a + ':' + p; } }; }
     },
     Drive: { Files: {
       create: (res, blob) => { const id = 'tmp' + crypto.randomUUID().replace(/-/g, ''); files[id] = { name: res.name, mime: res.mimeType, updated: Date.now(), ss: new Spreadsheet(id, res.name, [new Sheet('MASTER', blob.rows)]) }; return { id }; },
@@ -122,7 +124,7 @@ function createEnv(opts = {}) {
   env.__addXlsxFile = (id, name, rows) => { files[id] = { name, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', updated: Date.now(), rows }; };
 
   const ctx = vm.createContext(Object.assign({}, env));
-  const dir = path.join(__dirname, '..', 'gas');
+  const dir = path.join(__dirname, '..', opts.dir || 'gas');
   const code = fs.readdirSync(dir).filter(f => f.endsWith('.gs')).sort().map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n;\n');
   vm.runInContext(code, ctx, { filename: 'gas-bundle.js' });
   ctx.__env = env;

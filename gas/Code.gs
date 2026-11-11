@@ -6,7 +6,7 @@
  * POST {action, token?, ...} (text/plain)   → login, setupAdmin, dan aksi admin
  */
 
-var APP_VERSION = '1.8.1';
+var APP_VERSION = '1.9.0';
 var PUBLIC_CACHE_SEC = 60;
 
 function fail_(code, message) { var e = new Error(message); e.code = code; throw e; }
@@ -74,6 +74,8 @@ function doPost(e) {
       case 'nextPRNo': return actNextPRNo_();
       case 'uploadSJ': return actUploadSJ_(me, b);
       case 'hapusFoto': return actHapusFoto_(me, b);
+      case 'setFotoStore': return actSetFotoStore_(me, b);
+      case 'migrateFoto': return actMigrateFoto_(me);
       case 'listAdmins': return actListAdmins_(me);
       case 'addAdmin': return actAddAdmin_(me, b);
       case 'removeAdmin': return actRemoveAdmin_(me, b);
@@ -96,7 +98,7 @@ function staleFiles_() {
   if (typeof actSetPics_ !== 'function' || String(actPR_).indexOf('picList_') < 0 || String(listKendala_).indexOf('pDate_') < 0) stale.push('Kendala.gs');
   if (typeof saatSheetDiedit !== 'function') stale.push('SheetEdit.gs');
   if (typeof actEditPR_ !== 'function') stale.push('PrEdit.gs');
-  if (typeof writeFotoLinks_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
+  if (typeof relayCall_ !== 'function' || typeof writeFotoLinks_ !== 'function' || String(actPR_).indexOf('listFoto_') < 0) stale.push('Foto.gs');
   return stale;
 }
 function actStatus_() {
@@ -112,7 +114,7 @@ function srcView_(id) {
 function actGetSettings_() {
   var c = cfg_(), at = props_().getProperty('PR_SYNCED_AT');
   var pc = pinCfg_();
-  return { prCanWrite: prCanWrite_(), picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
+  return { fotoStore: actFotoStoreInfo_(), prCanWrite: prCanWrite_(), picList: picList_(), staleFiles: staleFiles_(), pin: !!(pc && pc.hash), pinAt: pc && pc.at || null, bound: c.bound, pr: srcView_(c.prId), master: srcView_(c.masterId), db: srcView_(c.dbId), prCopiedAt: at ? +at : null, autoSync: autoSyncOn_() };
 }
 
 /**

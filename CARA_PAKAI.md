@@ -22,9 +22,11 @@ Syarat: akun pemilik script (ahadaja@gmail.com) adalah **Editor** di Sheet Track
 
 ### Foto surat jalan
 - Buka PR → **📷 Foto surat jalan** (atau dari detail item → **📷 Foto SJ**; setelah mengisi Tgl terima + No. SJ aplikasi juga menawarkan foto). Di HP tombol **Ambil / pilih foto** membuka kamera; bisa beberapa foto (maks 8 sekali kirim).
-- Foto diperkecil otomatis di HP (±300–500 KB) lalu disimpan ke Google Drive akun pemilik script: **LoGistic Tracking / Surat Jalan / <tanggal upload>** — folder per hari dibuat otomatis. Nama file: `SJ_<PR>_<No SJ>_<jam>_<n>.jpg`.
+- Foto diperkecil otomatis di HP (±300–500 KB) lalu disimpan ke Google Drive: **LoGistic Tracking / Surat Jalan / <tanggal upload>** — folder per hari dibuat otomatis. Nama file: `SJ_<PR>_<No SJ>_<jam>_<n>.jpg`.
+- **Drive siapa?** Default: Drive akun pemilik script. Agar foto disimpan & **dimiliki prc.citrakd**, pasang *script foto* di akun itu (panduan: `relay/CARA_PASANG.md`) lalu isi URL & kunci di **Pengaturan → Penyimpanan foto surat jalan** → *Uji & pakai*. Foto lama bisa dipindahkan dengan tombol **Pindahkan ke Drive …**.
+- **Siapa yang bisa melihat:** admin & viewer (pemegang PIN) di aplikasi; link di Sheet PR / Excel bisa dibuka **siapa saja yang punya link** (bisa dimatikan di Pengaturan).
 - **Link di Sheet Tracking PR:** setelah upload, link foto otomatis ditulis ke kolom **V "FOTO SJ"** (setelah REMARKS), contoh `SJ 1301 (10-Nov) | SJ 1301 (10-Nov) #2` — tiap bagian bisa diklik membuka foto di Drive. Baris yang diberi link: item yang difoto (dari detail item), atau item dengan No. SJ yang sama (dari PR), atau semua item PR jika No. SJ kosong. Foto dihapus → link ikut hilang. Tim yang punya akses ke Sheet PR otomatis diberi akses *lihat* ke file foto itu.
-- Foto **tidak dibagikan publik**; tampil di aplikasi (badge 📷 di PR, galeri, ketuk untuk ukuran penuh) untuk admin & pemegang PIN. Admin bisa **Hapus** (file pindah ke Sampah Drive, bisa dipulihkan 30 hari).
+- Tampil di aplikasi: badge 📷 di PR, galeri, ketuk untuk ukuran penuh, **Buka di Drive ↗**. Admin bisa **Hapus** (file pindah ke Sampah Drive pemiliknya, bisa dipulihkan 30 hari).
 
 ### Kendala & action plan (Tracking PR)
 Untuk item/PR yang tersendat, admin mencatat **Kenapa** (kendala) · **Apa** (action plan) · **Siapa** (PIC) · **Kapan** (tanggal komitmen).

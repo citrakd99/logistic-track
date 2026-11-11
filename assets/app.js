@@ -533,7 +533,7 @@
   async function openFotoViewer(list, id, p) {
     const f = list.find(x => x.id === id), i = list.indexOf(f);
     const root = document.createElement('div'); root.className = 'pv';
-    root.innerHTML = `<div class="pv-bar"><span>${esc(p.prNo)}${f.sjNo ? ' · SJ ' + esc(f.sjNo) : ''} · ${esc(fmtDT(+f.uploadedAt))}${f.note ? ' · ' + esc(f.note) : ''}</span><span>${i > 0 ? '<button class="btn sm" data-pv="-1">‹</button>' : ''}${i < list.length - 1 ? '<button class="btn sm" data-pv="1">›</button>' : ''}${isAdmin() ? '<button class="btn sm danger" id="pvDel">Hapus</button>' : ''}<button class="btn sm" id="pvX">Tutup ✕</button></span></div>
+    root.innerHTML = `<div class="pv-bar"><span>${esc(p.prNo)}${f.sjNo ? ' · SJ ' + esc(f.sjNo) : ''} · ${esc(fmtDT(+f.uploadedAt))}${f.note ? ' · ' + esc(f.note) : ''}</span><span>${i > 0 ? '<button class="btn sm" data-pv="-1">‹</button>' : ''}${i < list.length - 1 ? '<button class="btn sm" data-pv="1">›</button>' : ''}${f.url ? `<a class="btn sm" href="${esc(f.url)}" target="_blank" rel="noopener">Buka di Drive ↗</a>` : ''}${isAdmin() ? '<button class="btn sm danger" id="pvDel">Hapus</button>' : ''}<button class="btn sm" id="pvX">Tutup ✕</button></span></div>
       <div class="pv-img">${f.thumb ? `<img alt="" src="data:image/jpeg;base64,${f.thumb}" style="filter:blur(2px)">` : ''}<span class="hint pv-load">Memuat foto ukuran penuh…</span></div>`;
     document.body.appendChild(root);
     const close = () => { root.remove(); document.removeEventListener('keydown', key, true); };
@@ -570,7 +570,7 @@
         <div class="gal" id="fsPrev"><span class="hint">Belum ada foto. Bisa beberapa foto (maks 8).</span></div>
         <div class="grid2"><div class="f"><label for="fsSj">No. surat jalan</label><input class="inp" id="fsSj" list="dlSj" value="${esc(sjPreset || (it && it.sjNo) || (sjs.length === 1 ? sjs[0] : ''))}"><datalist id="dlSj">${sjs.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
           <div class="f"><label for="fsNote">Catatan</label><input class="inp" id="fsNote" placeholder="${it ? esc(it.desc) : 'mis. pengiriman ke-1'}"></div></div>
-        <span class="hint">Disimpan ke Google Drive: <b>LoGistic Tracking / Surat Jalan / ${esc(today())}</b>. Foto tidak dibagikan publik.</span><div id="fsErr"></div>`,
+        <span class="hint">Disimpan ke Google Drive${state.fotoOwner ? ' <b>' + esc(state.fotoOwner) + '</b>' : ''}: <b>LoGistic Tracking / Surat Jalan / ${esc(today())}</b>. Admin &amp; viewer bisa melihatnya di aplikasi.</span><div id="fsErr"></div>`,
       foot: '<button class="btn" data-close="1">Batal</button><button class="btn primary" id="fsSave">Unggah</button>'
     });
     const draw = () => { $('#fsPrev').innerHTML = shots.length ? shots.map((s, i) => `<span class="th"><img alt="" src="data:image/jpeg;base64,${s.thumb}"><button class="btn sm ghost" data-rmf="${i}" aria-label="Hapus foto">✕</button></span>`).join('') : '<span class="hint">Belum ada foto.</span>';
@@ -584,6 +584,7 @@
       if (!shots.length) { showErr('fsErr', 'Ambil minimal 1 foto.'); return; }
       const kb = Math.round(shots.reduce((a, s) => a + s.data.length * 0.75, 0) / 1024);
       submit('fsSave', 'fsErr', async () => { const r = await apiPost('uploadSJ', { prNo: p.prNo, sjNo: val('fsSj'), note: val('fsNote'), items: it ? String(it.no) : '', files: shots }); delete state.thumbs[p.key];
+          if (r && r.owner) state.fotoOwner = r.owner;
           if (r && r.linkWritten === false) setTimeout(() => toast('Foto tersimpan di Drive, tapi link belum ditulis ke Sheet PR: ' + r.linkNote, true), 3200); }, `${shots.length} foto surat jalan tersimpan · link ditulis di kolom FOTO SJ`,
         { title: `Unggah ${shots.length} foto surat jalan?`, rows: [['PR', esc(p.prNo)], ['No. SJ', esc(val('fsSj'))], ['Catatan', esc(val('fsNote'))], ['Foto', `<span class="gal">${shots.map(s => `<span class="th"><img alt="" src="data:image/jpeg;base64,${s.thumb}"></span>`).join('')}</span><span class="dim">±${kb} KB</span>`], ['Folder Drive', `LoGistic Tracking / Surat Jalan / ${esc(today())}`], ['Link di Sheet PR', `kolom <b>FOTO SJ</b> (setelah REMARKS) pada ${it ? 'item #' + esc(fmtN(it.no)) : val('fsSj') ? 'item ber-No. SJ ' + esc(val('fsSj')) : 'semua item ' + esc(p.prNo)}`]], ok: 'Ya, unggah' });
     };
@@ -1211,7 +1212,7 @@
   async function renderSettings(v) {
     v.innerHTML = '<div class="loading">Memuat pengaturan…</div>';
     let st, admins;
-    try { [st, admins] = await Promise.all([apiPost('getSettings'), apiPost('listAdmins')]); state.prCanWrite = st.prCanWrite; }
+    try { [st, admins] = await Promise.all([apiPost('getSettings'), apiPost('listAdmins')]); state.prCanWrite = st.prCanWrite; state.fotoOwner = st.fotoStore && st.fotoStore.mode === 'relay' ? st.fotoStore.owner : ''; }
     catch (e) { v.innerHTML = errView(e, 'retrySet'); const r = $('#retrySet'); if (r) r.onclick = () => render(); return; }
     if (state.route !== 'pengaturan') return;
     const srcCard = (label, s) => s ? `<div class="src"><b>${esc(label)}: ${esc(s.name || s.id)}</b>${s.error ? `<span class="late">${esc(s.error)}</span>` : `<span class="dim">${esc(s.type)} · diubah ${esc(fmtDT(s.updated))}</span><a href="${esc(s.url)}" target="_blank" rel="noopener">Buka file ↗</a>`}</div>` : `<div class="src"><b>${esc(label)}</b><span class="dim">Belum diatur</span></div>`;
@@ -1228,6 +1229,17 @@
         ${st.bound ? '' : `<div class="f"><label for="cMs">Link Master Stok <span class="dim">(opsional)</span></label><input class="inp" id="cMs" value="${st.master ? esc(st.master.url || '') : ''}"></div>
         <div class="f"><label for="cDb">Link Data Sheet <span class="dim">(kosongkan untuk dibuat otomatis)</span></label><input class="inp" id="cDb" value="${st.db ? esc(st.db.url || '') : ''}"></div>`}
         <div id="cErr"></div><div><button class="btn primary" id="cSave">Uji & simpan</button></div></section>
+      <section class="card"><h2>Penyimpanan foto surat jalan</h2>
+        ${(() => { const fs = st.fotoStore || { mode: 'local' }; return `
+        <div class="src"><b>Sekarang: ${fs.mode === 'relay' ? 'Google Drive ' + esc(fs.owner || 'akun relay') : 'Google Drive akun pemilik script'}</b><span class="dim">Folder: LoGistic Tracking / Surat Jalan / &lt;tanggal upload&gt;${fs.mode === 'relay' ? ' · lewat script foto ' + esc(fs.relayUrl) : ''}</span></div>
+        <label class="check" style="white-space:normal;align-items:flex-start"><input type="checkbox" id="fsPub" ${fs.publicLink !== false ? 'checked' : ''} style="margin-top:3px"><span>Link foto bisa dibuka <b>siapa saja yang punya link</b> (dari Sheet PR / Excel). Di aplikasi, admin &amp; viewer selalu bisa melihat.</span></label>
+        <fieldset><legend>Simpan di Drive akun lain (mis. prc.citrakd)</legend>
+          <p class="hint">Pasang script foto (<span class="mono">relay/FotoRelay.gs</span>) di akun tujuan, jalankan <span class="mono">setup</span>, deploy sebagai Aplikasi web, lalu isi URL &amp; kunci di sini.</p>
+          <div class="f"><label for="fsUrl">URL script foto (…/exec)</label><input class="inp mono" id="fsUrl" placeholder="https://script.google.com/macros/s/…/exec"></div>
+          <div class="f"><label for="fsKey">Kunci relay</label><input class="inp mono" id="fsKey" type="password" autocomplete="off" placeholder="${fs.mode === 'relay' ? 'tersimpan — isi hanya untuk mengganti' : 'dari log setup()'}"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="fsRelay">Uji &amp; pakai</button>${fs.mode === 'relay' ? '<button class="btn" id="fsLocal">Kembali ke Drive pemilik script</button>' : ''}</div></fieldset>
+        ${fs.mode === 'relay' && fs.localCount ? `<div class="katbar">${fs.localCount} foto lama masih di Drive pemilik script. <button class="btn sm" id="fsMig">Pindahkan ke Drive ${esc(fs.owner)}</button></div>` : ''}
+        <div id="fsErr2"></div>`; })()}</section>
       <section class="card"><h2>Daftar PIC</h2>
         <p class="hint">Pilihan PIC di form kendala & action plan. Menghapus nama dari daftar tidak mengubah catatan lama.</p>
         <div id="picRows">${(st.picList || []).map((p, i) => `<div class="adm"><span>${esc(p)}</span><span><button class="btn sm ghost" data-pmv="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan">↑</button><button class="btn sm danger" data-prm="${i}">Hapus</button></span></div>`).join('')}</div>
@@ -1254,6 +1266,23 @@
     };
     const cs = $('#cSync'); if (cs) cs.onclick = async () => { cs.disabled = true; cs.textContent = 'Menyalin…'; try { await apiPost('syncPR'); state.pr = null; state.stock = null; toast('Tracking PR disalin ke Master'); render(); } catch (e) { showErr('cErr', e.message); cs.disabled = false; cs.textContent = 'Sinkron sekarang'; } };
     const ca = $('#cAuto'); if (ca) ca.onclick = async () => { ca.disabled = true; try { await apiPost('setAutoSync', { on: !st.autoSync }); toast(st.autoSync ? 'Sinkron otomatis dimatikan' : 'Sinkron otomatis aktif tiap 10 menit'); render(); } catch (e) { showErr('cErr', e.message); ca.disabled = false; } };
+    const fsInfo = st.fotoStore || {};
+    $('#fsPub').onchange = async e => { try { await apiPost('setFotoStore', { publicLink: e.target.checked }); toast(e.target.checked ? 'Foto baru bisa dibuka siapa saja yang punya link' : 'Foto baru hanya bisa dilihat di aplikasi & oleh tim Sheet PR'); } catch (x) { showErr('fsErr2', x.message); e.target.checked = !e.target.checked; } };
+    $('#fsRelay').onclick = async () => {
+      const url = val('fsUrl') || '', key = $('#fsKey').value.trim();
+      if (!url && fsInfo.mode !== 'relay') { showErr('fsErr2', 'Isi URL script foto.'); return; }
+      if (!(await confirmBox({ title: 'Simpan foto di Drive akun lain?', rows: [['URL', esc(url || fsInfo.relayUrl)]], note: 'Koneksi diuji dulu. Foto baru akan disimpan & dimiliki akun yang memasang script foto.', ok: 'Uji & pakai' }))) return;
+      const b = $('#fsRelay'); b.disabled = true; b.textContent = 'Menguji…';
+      try { const r = await apiPost('setFotoStore', { mode: 'relay', url, key }); toast('Foto baru disimpan di Drive ' + r.owner); render(); }
+      catch (x) { showErr('fsErr2', x.message); b.disabled = false; b.textContent = 'Uji & pakai'; }
+    };
+    const fl = $('#fsLocal'); if (fl) fl.onclick = async () => { if (!(await confirmBox({ title: 'Kembali simpan di Drive pemilik script?', note: 'Foto yang sudah di Drive ' + esc(fsInfo.owner) + ' tetap di sana dan tetap bisa dilihat.', ok: 'Ya' }))) return; try { await apiPost('setFotoStore', { mode: 'local' }); render(); } catch (x) { showErr('fsErr2', x.message); } };
+    const fm = $('#fsMig'); if (fm) fm.onclick = async () => {
+      if (!(await confirmBox({ title: `Pindahkan ${fsInfo.localCount} foto ke Drive ${esc(fsInfo.owner)}?`, note: 'Foto disalin ke Drive tujuan (folder per tanggal aslinya), link di Sheet PR diperbarui, file lama dipindah ke Sampah Drive pemilik script.', ok: 'Ya, pindahkan' }))) return;
+      fm.disabled = true; let moved = 0;
+      try { for (;;) { const r = await apiPost('migrateFoto'); moved += r.moved; fm.textContent = `Memindahkan… ${moved}/${fsInfo.localCount}`; if (!r.remaining || !r.moved) break; } toast(moved + ' foto dipindahkan'); state.thumbs = {}; render(); }
+      catch (x) { showErr('fsErr2', x.message + ` (${moved} sudah dipindah, klik lagi untuk melanjutkan)`); fm.disabled = false; }
+    };
     const savePics = async (list, msg) => { try { await apiPost('setPics', { pics: list }); if (state.pr) state.pr.picList = list; toast(msg); render(); } catch (e) { showErr('picErr', e.message); } };
     $('#picAdd').onclick = () => { const n = val('picNew'); if (!n) return; if ((st.picList || []).some(p => p.toLowerCase() === n.toLowerCase())) { showErr('picErr', 'Nama sudah ada.'); return; } savePics((st.picList || []).concat(n), 'PIC ditambahkan'); };
     $('#picNew').onkeydown = e => { if (e.key === 'Enter') $('#picAdd').click(); };
@@ -1281,7 +1310,7 @@
 
   // ---------- start ----------
   async function boot() {
-    $('#ver').textContent = 'v1.8.2';
+    $('#ver').textContent = 'v1.9.0';
     route();
     if (!API()) return;
     try { state.status = await apiGet('status'); } catch (e) { /* ditangani di tiap tampilan */ }
