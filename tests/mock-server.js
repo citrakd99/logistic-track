@@ -5,7 +5,9 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const { createEnv, prRowsFromXlsx } = require('./gas-emulator');
 const ROOT = path.join(__dirname, '..'), PORT = +process.argv[3] || 8787;
 const MID = 'DEMOMASTERGSHEET0000000000000000000000001';
-const g = createEnv({ boundId: MID }), env = g.__env;
+// relay foto (simulasi akun prc.citrakd) — URL contoh & kunci dicetak saat start
+const relay = createEnv({ dir: 'relay', email: 'prc.citrakd@gmail.com' }); relay.setup();
+const g = createEnv({ boundId: MID, email: 'ahadaja@gmail.com', urlFetch: (u, p) => relay.doPost({ postData: { contents: p.payload } }).content }), env = g.__env;
 const prRows = process.argv[2] ? prRowsFromXlsx(process.argv[2]) : [['No.', 'Deskripsi', 'Qty', 'Sat', 'Tanggal', 'PR'], [1, 'Helm Orange', 20, 'pcs', '2026-11-01', 'PR-001', '', '', '', '', '', '', '', '', 12, 'pcs', '2026-11-05', 'SJ1', 'Toko A', 'Close', '']];
 env.__addSheetFile('DEMOPRSHEET00000000000000000000000000000001', 'TRACKING PR (demo)', 'TRACKING PR', prRows);
 env.__addSheetFile(MID, 'Master Stok (demo)', 'MASTER', [['Nama Barang', 'Satuan', 'Kategori', 'Stok Awal', 'Lokasi Rak', 'Stok Minimum', 'Catatan'],
@@ -29,4 +31,4 @@ http.createServer((req, res) => {
   let txt = fs.readFileSync(f);
   if (p === '/assets/config.js') txt = `window.LT_CONFIG={API_URL:location.origin+'/api'};`;
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)] || 'application/octet-stream' }); res.end(txt);
-}).listen(PORT, () => console.log(`LoGistic Tracking lokal: http://localhost:${PORT}  (admin@demo.id / demo12345)`));
+}).listen(PORT, () => console.log(`LoGistic Tracking lokal: http://localhost:${PORT}  (admin@demo.id / demo12345)\nRelay foto demo: URL https://script.google.com/macros/s/AKfycbDEMO/exec · KUNCI ${relay.__env.__props.RELAY_KEY}`));

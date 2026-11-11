@@ -188,7 +188,7 @@ legend{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--
 .kv dd{margin:0;white-space:pre-line;word-break:break-word}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .card h2{margin:0;font-family:var(--f-display);font-size:24px}
-.src{display:flex;flex-direction:column;gap:2px;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2)}
+.src{display:flex;flex-direction:column;gap:2px;font-size:13.5px;word-break:break-word;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2)}
 .adm{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 
 /* drawer */

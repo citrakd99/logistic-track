@@ -43,6 +43,7 @@ gas/                       Backend Apps Script — salin semua file ini ke proye
   PrEdit.gs                Edit / tambah item & PR di Sheet Tracking PR (cek bentrok)
   Foto.gs                  Foto surat jalan → Drive (folder per hari), tab FOTO_SJ
   Seed.gs                  Migrasi 27 penanda kategori "Alat" dari aplikasi lama
+relay/                     Script foto untuk akun lain (mis. prc.citrakd) — foto disimpan & dimiliki akun itu (relay/CARA_PASANG.md)
 dist/LoGistic.gs           Gabungan semua file gas/ (satu file untuk ditempel ke Apps Script)
   appsscript.json          Manifest (zona waktu, Drive API v3, akses web app)
 tests/                     Unit test, test integrasi (emulator Apps Script), server lokal

@@ -8,7 +8,7 @@ var TABS = {
   TX: ['id', 'type', 'key', 'name', 'unit', 'kat', 'qty', 'date', 'person', 'purpose', 'cond', 'note', 'loanId', 'reason', 'createdAt', 'createdBy', 'void', 'voidReason', 'voidAt', 'voidBy', 'replaces'],
   ITEMS: ['key', 'name', 'unit', 'kat', 'awal', 'rak', 'min', 'note', 'hidden', 'full', 'source', 'updatedAt', 'updatedBy'],
   LOG: ['at', 'email', 'action', 'detail', 'result'],
-  FOTO_SJ: ['id', 'prKey', 'prNo', 'sjNo', 'items', 'fileId', 'fileName', 'folder', 'url', 'size', 'thumb', 'note', 'status', 'uploadedAt', 'uploadedBy'],
+  FOTO_SJ: ['id', 'prKey', 'prNo', 'sjNo', 'items', 'fileId', 'fileName', 'folder', 'url', 'size', 'thumb', 'note', 'status', 'uploadedAt', 'uploadedBy', 'store'],
   KENDALA: ['id', 'prKey', 'prNo', 'itemNo', 'itemId', 'itemDesc', 'kategori', 'kendala', 'action', 'pic', 'komitmen', 'status', 'selesaiAt', 'followup', 'followupAt', 'geser', 'riwayat', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']
 };
 // kolom yang dipaksa teks agar Sheets tidak mengubah "3/4 inch" atau tanggal jadi nilai lain
@@ -163,6 +163,11 @@ function db_() {
 function ensureTab_(ss, name, headers) {
   var sh = ss.getSheetByName(name);
   if (!sh) { sh = ss.insertSheet(name); }
+  if (sh.getLastRow() > 0) {
+    // tab lama dengan kolom lebih sedikit: tambahkan judul kolom baru di kanan (data lama tetap)
+    var cur = sh.getRange(1, 1, 1, headers.length).getValues()[0];
+    headers.forEach(function (h, i) { if (cur[i] === '' || cur[i] === null) { if (i >= cur.filter(function (x) { return x !== '' && x !== null; }).length) sh.getRange(1, i + 1).setValue(h).setFontWeight('bold'); } });
+  }
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
     sh.setFrozenRows(1);
